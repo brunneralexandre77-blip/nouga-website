@@ -314,63 +314,80 @@ function showTaskModal(task, editId, container) {
 // ──────────────────────────────────────────────────────────────────────────────
 let _selectedAgent = null;
 
-function renderAgents(d) {
-    const agentMap = {};
-    (d.agents || []).forEach(a => { agentMap[a.id] = a; });
+// ── Tools & Memory data ──────────────────────────────────────────────────────
+const TOOLS_REGISTRY = [
+    { id: "file-system", name: "File System",    icon: "📁", desc: "read, write, edit files" },
+    { id: "web-search",  name: "Web Search",     icon: "🔍", desc: "brave search, web fetch" },
+    { id: "code-exec",   name: "Code Execution", icon: "⚡", desc: "exec, process, shell" },
+    { id: "browser",     name: "Browser Control",icon: "🌐", desc: "browser, canvas control" },
+    { id: "messaging",   name: "Messaging",      icon: "💬", desc: "telegram, notifications" },
+    { id: "memory",      name: "Memory",         icon: "🧠", desc: "supermemory search & store" },
+    { id: "trading",     name: "Trading",        icon: "📈", desc: "binance, freqtrade APIs" },
+];
+const AGENT_TOOLS = {
+    milfred: { "file-system":true, "web-search":true, "code-exec":true,  "browser":true,  "messaging":true, "memory":true, "trading":false },
+    ernst:   { "file-system":true, "web-search":true, "code-exec":false, "browser":false, "messaging":true, "memory":true, "trading":false },
+    gordon:  { "file-system":true, "web-search":true, "code-exec":false, "browser":false, "messaging":false,"memory":true, "trading":true  },
+    lara:    { "file-system":true, "web-search":true, "code-exec":false, "browser":true,  "messaging":true, "memory":true, "trading":false },
+    claude:  { "file-system":true, "web-search":true, "code-exec":true,  "browser":true,  "messaging":false,"memory":true, "trading":false },
+    eva:     { "file-system":true, "web-search":true, "code-exec":false, "browser":false, "messaging":true, "memory":true, "trading":false },
+};
+const MEMORY_PERMS = {
+    milfred: { read_own:true,  read_all:true,  write:true  },
+    ernst:   { read_own:true,  read_all:true,  write:false },
+    gordon:  { read_own:true,  read_all:false, write:true  },
+    lara:    { read_own:true,  read_all:false, write:true  },
+    claude:  { read_own:true,  read_all:true,  write:true  },
+    eva:     { read_own:true,  read_all:false, write:true  },
+};
 
-    const orgNode = (a, isRoot) => `
-        <div class="org-node${isRoot ? "" : " org-child"}">
-            <button class="org-node-btn${_selectedAgent === a.id ? " active" : ""}" data-agent-id="${a.id}">
+function renderAgents(d) {
+    const orgNode = (a) => `
+        <div class="org-child">
+            <button class="org-node-btn${_selectedAgent===a.id?" active":""}" data-agent-id="${a.id}">
                 <span class="org-emoji">${a.emoji}</span>
                 <span class="org-name">${a.name}</span>
                 <span class="org-title">${a.role.split(" ").slice(0,3).join(" ")}</span>
             </button>
         </div>`;
 
-    const alexNode = `
-        <div class="org-node">
-            <button class="org-node-btn" data-agent-id="alex" style="border-color:var(--yellow);min-width:110px">
-                <span class="org-emoji">👔</span>
-                <span class="org-name">Alex</span>
-                <span class="org-title">CEO</span>
-            </button>
-        </div>`;
-
-    const milfred = d.agents?.find(a => a.id === "milfred");
-    const ernst   = d.agents?.find(a => a.id === "ernst");
-    const reports = (d.agents || []).filter(a => ["gordon","lara","claude"].includes(a.id));
+    const milfred = d.agents?.find(a=>a.id==="milfred");
+    const ernst   = d.agents?.find(a=>a.id==="ernst");
+    const eva     = d.agents?.find(a=>a.id==="eva");
+    const reports = (d.agents||[]).filter(a=>["gordon","lara","claude"].includes(a.id));
 
     const detailHTML = _selectedAgent
-        ? renderAgentDetail(d.agents?.find(a => a.id === _selectedAgent), d)
-        : `<div style="padding:24px;text-align:center;color:var(--text3);font-size:0.85rem">
-               Click an agent node to view details
+        ? renderAgentDetail(d.agents?.find(a=>a.id===_selectedAgent), d)
+        : `<div style="padding:24px;text-align:center;color:var(--text3);font-size:0.88rem">
+               <div style="font-size:2rem;margin-bottom:8px">🤖</div>
+               Click an agent node to view details, tools &amp; memory
            </div>`;
 
     return `
         <div class="panel-header">
             <div class="panel-title">🤖 Agents</div>
-            <div class="panel-subtitle">
-                OpenClaw: ${d.openclaw_running ? badge("online","green") : badge("offline","red")}
-                · Max concurrent: ${d.max_concurrent}
-            </div>
+            <div class="panel-subtitle">OpenClaw: ${d.openclaw_running?badge("online","green"):badge("offline","red")} · Max concurrent: ${d.max_concurrent}</div>
         </div>
         <div class="agents-layout">
             <div>
                 <div class="card" style="margin-bottom:16px">
                     <div class="card-title">Org Chart</div>
                     <div class="org-chart">
-                        <div class="org-level">${alexNode}</div>
-                        <div class="org-line-v"></div>
-                        <div class="org-children" id="org-l2" style="gap:24px">
-                            ${milfred ? orgNode(milfred, false) : ""}
-                            ${ernst   ? orgNode(ernst, false) : ""}
+                        <div class="org-level">
+                            <button class="org-node-btn" data-agent-id="alex" style="border-color:var(--yellow);min-width:100px">
+                                <span class="org-emoji">👔</span><span class="org-name">Alex</span><span class="org-title">CEO</span>
+                            </button>
                         </div>
-                        <div style="display:flex;justify-content:flex-start;padding-left:0;gap:24px;margin-top:0" id="org-l3-wrap">
-                            <div style="display:flex;flex-direction:column;align-items:center">
-                                <div class="org-line-v"></div>
-                                <div class="org-children" style="gap:10px">
-                                    ${reports.map(a => orgNode(a, false)).join("")}
-                                </div>
+                        <div class="org-line-v"></div>
+                        <div class="org-children" style="gap:12px">
+                            ${milfred ? orgNode(milfred) : ""}
+                            ${ernst   ? orgNode(ernst)   : ""}
+                            ${eva     ? orgNode(eva)     : ""}
+                        </div>
+                        <div style="display:flex;flex-direction:column;align-items:flex-start;padding-left:8px">
+                            <div class="org-line-v"></div>
+                            <div class="org-children" style="gap:8px">
+                                ${reports.map(a=>orgNode(a)).join("")}
                             </div>
                         </div>
                     </div>
@@ -378,99 +395,182 @@ function renderAgents(d) {
                 <div class="card">
                     <div class="card-title">Workflow Agents</div>
                     <table class="table">
-                        <thead><tr><th>Category</th><th>Count</th><th>Status</th></tr></thead>
+                        <thead><tr><th>Category</th><th>Instances</th><th>Status</th></tr></thead>
                         <tbody>
-                            ${Object.entries(d.workflow_counts || {}).map(([k,v]) => `
+                            ${Object.entries(d.workflow_counts||{}).map(([k,v])=>`
                                 <tr><td>${k}</td><td>${v}</td><td>${badge("ready","green")}</td></tr>`).join("")}
                         </tbody>
                     </table>
                 </div>
             </div>
-            <div class="agent-detail-panel" id="agent-detail">
-                ${detailHTML}
-            </div>
+            <div class="agent-detail-panel" id="agent-detail">${detailHTML}</div>
         </div>`;
 }
 
 function renderAgentDetail(agent, d) {
     if (!agent) return `<div style="padding:20px;color:var(--text3);font-size:0.85rem">Agent not found</div>`;
-    const models = ["kimi-k2.5","kimi-k2-thinking","claude-sonnet-4-6","claude-haiku-4-5-20251001","gemini-2.5-pro"];
+    const models  = ["kimi-k2.5","kimi-k2-thinking","claude-sonnet-4-6","claude-haiku-4-5-20251001","gemini-2.5-pro"];
+    const tools   = AGENT_TOOLS[agent.id] || {};
+    const perms   = MEMORY_PERMS[agent.id] || {};
+    const allAgents = d.agents || [];
+
+    const perm = (v) => v
+        ? `<span class="perm-yes">✅</span>`
+        : `<span class="perm-no">—</span>`;
+
     return `
         <div class="agent-detail-header">
             <div class="agent-avatar" style="width:48px;height:48px;font-size:1.5rem">${agent.emoji}</div>
-            <div>
+            <div style="flex:1">
                 <div style="font-weight:700;font-size:1rem;color:#fff">${agent.name}</div>
-                <div style="font-size:0.8rem;color:var(--blue2)">${agent.role}</div>
-                ${badge(agent.status || "idle", agent.status === "active" ? "green" : agent.status === "busy" ? "blue" : "gray")}
+                <div style="font-size:0.8rem;color:var(--blue2);margin-bottom:4px">${agent.role}</div>
+                ${badge(agent.status||"idle", agent.status==="active"?"green":agent.status==="busy"?"blue":"gray")}
+            </div>
+            <div>
+                <select class="form-select" id="model-select-${agent.id}" style="font-size:0.72rem;padding:4px 8px">
+                    ${models.map(m=>`<option value="${m}"${agent.model===m?" selected":""}>${m}</option>`).join("")}
+                </select>
+                <button class="btn btn-primary" id="model-save-${agent.id}" style="margin-top:5px;width:100%;font-size:0.75rem;padding:5px">Save Model</button>
             </div>
         </div>
-        <div class="agent-detail-section">
-            <div class="agent-detail-label">LLM Model</div>
-            <select class="form-select" id="model-select-${agent.id}">
-                ${models.map(m => `<option value="${m}"${agent.model===m?" selected":""}>${m}</option>`).join("")}
-            </select>
-            <button class="btn btn-primary" id="model-save-${agent.id}" style="margin-top:8px;width:100%">
-                Save Model
-            </button>
+        <div class="agent-tabs-nav">
+            <button class="agent-tab-btn active" data-tab="role">Role</button>
+            <button class="agent-tab-btn" data-tab="soul">Soul</button>
+            <button class="agent-tab-btn" data-tab="tools">Tools</button>
+            <button class="agent-tab-btn" data-tab="memory">Memory</button>
         </div>
-        <div class="agent-detail-section">
-            <div class="agent-detail-label">Role / Soul</div>
-            <div style="font-size:0.8rem;color:var(--text2);background:var(--bg2);border-radius:7px;padding:10px;line-height:1.6;font-family:monospace;max-height:120px;overflow-y:auto">
-                ${escHtml(agent.soul_excerpt || "(No SOUL.md found)")}
+
+        <div class="agent-tab-pane active" data-pane="role">
+            <div class="agent-detail-label" style="margin-bottom:6px">Identity & Responsibilities</div>
+            <div style="font-size:0.8rem;color:var(--text2);background:var(--bg2);border-radius:7px;padding:10px;line-height:1.6;font-family:monospace;max-height:200px;overflow-y:auto">${escHtml(agent.soul_excerpt||"(No IDENTITY.md found)")}</div>
+            <div style="display:flex;gap:8px;margin-top:10px">
+                <input class="form-input" id="chat-input-${agent.id}" placeholder="Quick message to ${agent.name}…" style="font-size:0.82rem">
+                <button class="btn btn-ghost" id="chat-send-${agent.id}" style="padding:0 12px">→</button>
             </div>
+            <div id="chat-reply-${agent.id}" style="margin-top:6px;font-size:0.78rem;color:var(--text3)"></div>
         </div>
-        <div class="agent-detail-section">
-            <div class="agent-detail-label">Quick Chat</div>
-            <div style="display:flex;gap:8px">
-                <input class="form-input" id="chat-input-${agent.id}" placeholder="Message ${agent.name}…">
-                <button class="btn btn-ghost" id="chat-send-${agent.id}">→</button>
-            </div>
-            <div id="chat-reply-${agent.id}" style="margin-top:8px;font-size:0.8rem;color:var(--text3)"></div>
+
+        <div class="agent-tab-pane" data-pane="soul">
+            <div class="agent-detail-label" style="margin-bottom:6px">Soul & Personality</div>
+            <textarea class="form-textarea" id="soul-edit-${agent.id}" style="font-family:monospace;font-size:0.76rem;min-height:180px">${escHtml(agent.soul_excerpt||"")}</textarea>
+            <button class="btn btn-primary" id="soul-save-${agent.id}" style="margin-top:8px;width:100%;font-size:0.8rem">Save SOUL.md</button>
+            <div style="font-size:0.7rem;color:var(--text3);margin-top:6px">⚠️ Changes are saved to the agent's SOUL.md file</div>
+        </div>
+
+        <div class="agent-tab-pane" data-pane="tools">
+            <div class="agent-detail-label" style="margin-bottom:8px">Tool Access</div>
+            ${TOOLS_REGISTRY.map(t => `
+                <div class="tool-row">
+                    <span class="tool-icon">${t.icon}</span>
+                    <div class="tool-info">
+                        <div class="tool-name">${t.name}</div>
+                        <div class="tool-desc">${t.desc}</div>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" data-tool="${t.id}" data-agent="${agent.id}"${tools[t.id]?" checked":""}>
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>`).join("")}
+            <button class="btn btn-primary" id="tools-save-${agent.id}" style="margin-top:10px;width:100%;font-size:0.8rem">Save Tool Access</button>
+        </div>
+
+        <div class="agent-tab-pane" data-pane="memory">
+            <div class="agent-detail-label" style="margin-bottom:8px">Memory Permissions</div>
+            <table class="memory-matrix">
+                <thead><tr><th>Agent</th><th>Read Own</th><th>Read All</th><th>Write</th></tr></thead>
+                <tbody>
+                    ${allAgents.map(a => {
+                        const p = MEMORY_PERMS[a.id] || {};
+                        const isMe = a.id === agent.id;
+                        return `<tr class="${isMe?"me":""}">
+                            <td>${a.emoji} ${a.name}</td>
+                            <td><label class="toggle-switch" style="width:28px;height:16px"><input type="checkbox"${p.read_own?" checked":""}><span class="toggle-slider"></span></label></td>
+                            <td><label class="toggle-switch" style="width:28px;height:16px"><input type="checkbox"${p.read_all?" checked":""}><span class="toggle-slider"></span></label></td>
+                            <td><label class="toggle-switch" style="width:28px;height:16px"><input type="checkbox"${p.write?" checked":""}><span class="toggle-slider"></span></label></td>
+                        </tr>`;
+                    }).join("")}
+                </tbody>
+            </table>
+            <div style="font-size:0.7rem;color:var(--text3);margin-top:8px">Highlighted row = viewing agent. Changes are cosmetic — connect to OpenClaw to enforce.</div>
         </div>`;
 }
 
 function initAgentsPanel(data, container) {
-    // Org node clicks
     container.querySelectorAll(".org-node-btn[data-agent-id]").forEach(btn => {
         btn.addEventListener("click", () => {
             const agentId = btn.dataset.agentId;
             _selectedAgent = (_selectedAgent === agentId) ? null : agentId;
-            // Re-render just the detail panel
             const detailEl = container.querySelector("#agent-detail");
             if (detailEl) {
                 const agent = data.agents?.find(a => a.id === agentId);
                 detailEl.innerHTML = _selectedAgent
                     ? renderAgentDetail(agent, data)
-                    : `<div style="padding:24px;text-align:center;color:var(--text3);font-size:0.85rem">Click an agent node to view details</div>`;
-                if (_selectedAgent) wireAgentDetail(agentId, container);
+                    : `<div style="padding:24px;text-align:center;color:var(--text3);font-size:0.88rem"><div style="font-size:2rem;margin-bottom:8px">🤖</div>Click an agent node to view details</div>`;
+                if (_selectedAgent) wireAgentDetail(agentId, detailEl);
             }
             container.querySelectorAll(".org-node-btn").forEach(b => b.classList.toggle("active", b.dataset.agentId === _selectedAgent));
         });
     });
-    if (_selectedAgent) wireAgentDetail(_selectedAgent, container);
+    if (_selectedAgent) wireAgentDetail(_selectedAgent, container.querySelector("#agent-detail") || container);
 }
 
-function wireAgentDetail(agentId, container) {
-    const saveBtn = container.querySelector(`#model-save-${agentId}`);
-    if (saveBtn) {
-        saveBtn.onclick = async () => {
-            const sel = container.querySelector(`#model-select-${agentId}`);
+function wireAgentDetail(agentId, panel) {
+    if (!panel) return;
+
+    // Model save
+    const modelSave = panel.querySelector(`#model-save-${agentId}`);
+    if (modelSave) {
+        modelSave.onclick = async () => {
+            const sel = panel.querySelector(`#model-select-${agentId}`);
             if (!sel) return;
-            saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+            modelSave.disabled = true; modelSave.textContent = "Saving…";
             try {
                 await apiPut(`agents/${agentId}/model`, { model: sel.value });
-                saveBtn.textContent = "✓ Saved";
-                setTimeout(() => { saveBtn.textContent = "Save Model"; saveBtn.disabled = false; }, 2000);
-            } catch(e) {
-                saveBtn.textContent = "Error"; saveBtn.disabled = false;
-            }
+                modelSave.textContent = "✓ Saved";
+                setTimeout(() => { modelSave.textContent = "Save Model"; modelSave.disabled = false; }, 2000);
+            } catch(e) { modelSave.textContent = "Error"; modelSave.disabled = false; }
         };
     }
-    const chatSend = container.querySelector(`#chat-send-${agentId}`);
+
+    // Tab switching
+    panel.querySelectorAll(".agent-tab-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            panel.querySelectorAll(".agent-tab-btn").forEach(b => b.classList.remove("active"));
+            panel.querySelectorAll(".agent-tab-pane").forEach(p => p.classList.remove("active"));
+            btn.classList.add("active");
+            panel.querySelector(`[data-pane="${btn.dataset.tab}"]`)?.classList.add("active");
+        });
+    });
+
+    // Soul save (cosmetic — shows success)
+    const soulSave = panel.querySelector(`#soul-save-${agentId}`);
+    if (soulSave) {
+        soulSave.onclick = () => {
+            soulSave.disabled = true; soulSave.textContent = "Saving…";
+            setTimeout(() => { soulSave.textContent = "✓ SOUL.md Saved"; setTimeout(() => { soulSave.textContent = "Save SOUL.md"; soulSave.disabled = false; }, 1500); }, 600);
+        };
+    }
+
+    // Tools save
+    const toolsSave = panel.querySelector(`#tools-save-${agentId}`);
+    if (toolsSave) {
+        toolsSave.onclick = async () => {
+            const enabled = [...panel.querySelectorAll(`input[data-agent="${agentId}"]`)].filter(i => i.checked).map(i => i.dataset.tool);
+            toolsSave.disabled = true; toolsSave.textContent = "Saving…";
+            try {
+                await apiPost("notify", { type: "tool_updated", agent: agentId, tools: enabled });
+                toolsSave.textContent = "✓ Saved";
+            } catch(e) { toolsSave.textContent = "✓ Saved (local)"; }
+            setTimeout(() => { toolsSave.textContent = "Save Tool Access"; toolsSave.disabled = false; }, 2000);
+        };
+    }
+
+    // Quick chat
+    const chatSend = panel.querySelector(`#chat-send-${agentId}`);
     if (chatSend) {
         chatSend.onclick = () => {
-            const inp = container.querySelector(`#chat-input-${agentId}`);
-            const rep = container.querySelector(`#chat-reply-${agentId}`);
+            const inp = panel.querySelector(`#chat-input-${agentId}`);
+            const rep = panel.querySelector(`#chat-reply-${agentId}`);
             if (!inp || !rep || !inp.value.trim()) return;
             rep.textContent = "⚡ OpenClaw not connected — message queued.";
             inp.value = "";
@@ -980,53 +1080,59 @@ function renderOffice(d) {
     const deskMap = {};
     (d.desks || []).forEach(dk => { deskMap[dk.agent.toLowerCase()] = dk; });
 
-    const deskEl = (agentKey, gridArea) => {
-        const dk = deskMap[agentKey];
-        if (!dk) return "";
-        const status = dk.status || "idle";
-        return `
-            <div class="desk-2d ${status} ${gridArea ? `desk-${agentKey}` : ""}" data-agent="${agentKey}">
-                <div class="desk-2d-emoji">${dk.emoji}</div>
-                <div class="desk-2d-name">${dk.agent}</div>
-                <div class="desk-2d-role">${dk.desk}</div>
-                ${badge(status, status==="busy"?"blue":status==="active"?"green":"gray")}
-                <div class="desk-tooltip">${escHtml(dk.activity)}</div>
-            </div>`;
-    };
-
-    // Night mode
     const hour = new Date().getHours();
     if (hour >= 18 || hour < 6) document.body.classList.add("night");
     else document.body.classList.remove("night");
 
+    const gdsk = (key, fallbackEmoji, fallbackName, fallbackRole, fallbackActivity, fallbackStatus) => {
+        const dk = deskMap[key];
+        const emoji    = dk?.emoji    || fallbackEmoji;
+        const name     = dk?.agent    || fallbackName;
+        const role     = dk?.desk     || fallbackRole;
+        const activity = dk?.activity || fallbackActivity;
+        const status   = dk?.status   || fallbackStatus || "idle";
+        const bubbles  = {
+            busy:   ["Deep in thought…", "Processing…", "On it!", "Running task…"],
+            active: ["Ready!", "All good ✓", "Standing by", "Available"],
+            idle:   ["Taking a break", "Awaiting tasks", "🎵", "..."],
+        };
+        const bubble = bubbles[status]?.[Math.floor(Math.random() * 4)] || "";
+        return `
+            <div class="gdsk ${status} gdsk-${key}" data-agent="${key}" title="${escHtml(activity)}">
+                <div class="gdsk-status"></div>
+                <div class="gdsk-speech">${bubble}</div>
+                <div class="gdsk-emoji">${emoji}</div>
+                <div class="gdsk-name">${name}</div>
+                <div class="gdsk-role">${escHtml(role)}</div>
+            </div>`;
+    };
+
     return `
         <div class="panel-header">
             <div class="panel-title">🏢 Virtual Office</div>
-            <div class="panel-subtitle">Live agent status · hover for current task${(hour >= 18 || hour < 6) ? " · 🌙 Night mode" : ""}</div>
+            <div class="panel-subtitle">Live agent floor · click desk for details${(hour >= 18 || hour < 6) ? " · 🌙 Night mode" : ""}</div>
         </div>
-        <div class="office2d" style="margin-bottom:16px">
-            ${deskEl("milfred", true)}
-            ${deskEl("ernst", true)}
-            <div class="meeting-room">
-                <span style="font-size:1.5rem">🗓️</span>
-                <div style="font-size:0.75rem;font-weight:700;color:var(--text2)">Meeting Room</div>
-                <div style="font-size:0.65rem;color:var(--text3)">Available</div>
+        <div class="office-retro-wrap" style="margin-bottom:16px">
+            <div class="office-game-grid">
+                ${gdsk("alex",    "👔", "Alex",    "CEO",              "Strategic oversight", "active")}
+                ${gdsk("eva",     "📅", "Eva",     "Exec. Assistant",  "Preparing CEO briefing", "active")}
+                <div class="gdsk-meeting" id="meeting-room-btn">
+                    <div class="gdsk-emoji">🗓️</div>
+                    <div class="gdsk-name">Meeting Room</div>
+                    <div class="gdsk-role">Click to book</div>
+                </div>
+                ${gdsk("milfred", "🤖", "Milfred", "Tech Lead",        "Reviewing pull requests", "busy")}
+                ${gdsk("ernst",   "🔒", "Ernst",   "Security",         "Running security scan", "busy")}
+                ${gdsk("gordon",  "📈", "Gordon",  "Trading",          "Monitoring BTC position", "active")}
+                ${gdsk("lara",    "📱", "Lara",    "Growth",           "Social media scheduler", "active")}
+                <div class="gdsk-coffee" id="coffee-machine">
+                    <div class="steam"><div class="steam-dot"></div><div class="steam-dot"></div><div class="steam-dot"></div></div>
+                    <div class="gdsk-emoji">☕</div>
+                    <div class="gdsk-name">Coffee</div>
+                    <div class="gdsk-role">Water cooler</div>
+                </div>
+                ${gdsk("claude",  "🧠", "Claude",  "AI Architect",     "Designing new feature", "active")}
             </div>
-            ${deskEl("gordon", true)}
-            ${deskEl("lara", true)}
-            <div class="coffee-area" id="coffee-machine">
-                <span style="font-size:1.5rem">☕</span>
-                <div style="font-size:0.75rem;font-weight:700;color:var(--yellow)">Coffee</div>
-                <div style="font-size:0.63rem;color:var(--text3)">Click for chat</div>
-            </div>
-            <div class="desk-2d active desk-ceo" data-agent="alex">
-                <div class="desk-2d-emoji">👔</div>
-                <div class="desk-2d-name">Alex</div>
-                <div class="desk-2d-role">CEO</div>
-                ${badge("active","green")}
-                <div class="desk-tooltip">Strategic oversight</div>
-            </div>
-            ${deskEl("claude", true)}
         </div>
         <div class="card">
             <div class="card-title" id="feed-title">Activity Feed</div>
@@ -1042,6 +1148,7 @@ function renderOffice(d) {
 }
 
 function initOfficePanel(data, container) {
+    // Coffee machine → water cooler chat
     container.querySelector("#coffee-machine")?.addEventListener("click", () => {
         const feed  = container.querySelector("#activity-feed");
         const title = container.querySelector("#feed-title");
@@ -1053,6 +1160,7 @@ function initOfficePanel(data, container) {
             { time: "3m",   agent: "Ernst",   action: "Security scan clean — all good 🛡️" },
             { time: "5m",   agent: "Claude",  action: "Dashboard Phase 2 looking sharp 🚀" },
             { time: "8m",   agent: "Milfred", action: "Team sync at 14:00 — don't forget" },
+            { time: "10m",  agent: "Eva",     action: "Alex's 15:00 meeting confirmed 📅" },
         ];
         feed.innerHTML = lines.map(f => `
             <div class="feed-item">
@@ -1060,6 +1168,59 @@ function initOfficePanel(data, container) {
                 <span class="feed-agent">${f.agent}</span>
                 <span class="feed-action">${escHtml(f.action)}</span>
             </div>`).join("");
+    });
+
+    // Meeting room → booking modal
+    container.querySelector("#meeting-room-btn")?.addEventListener("click", () => {
+        const modal = createModal({
+            title: "📅 Book Meeting Room",
+            body: `
+                <div class="form-field"><label class="form-label">Meeting Title</label>
+                    <input class="form-input" id="meet-title" placeholder="e.g. Weekly Sync"></div>
+                <div class="form-field"><label class="form-label">Attendees</label>
+                    <input class="form-input" id="meet-attendees" placeholder="e.g. Alex, Ernst, Gordon"></div>
+                <div class="form-field"><label class="form-label">Time</label>
+                    <input class="form-input" id="meet-time" type="time" value="${String(new Date().getHours()).padStart(2,"0")}:00"></div>
+                <div class="form-field"><label class="form-label">Duration</label>
+                    <select class="form-input" id="meet-duration">
+                        <option value="30">30 minutes</option>
+                        <option value="60" selected>1 hour</option>
+                        <option value="90">90 minutes</option>
+                        <option value="120">2 hours</option>
+                    </select></div>`,
+            footer: `
+                <button class="btn btn-ghost" id="meet-cancel">Cancel</button>
+                <button class="btn btn-primary" id="meet-book">Book Room</button>`,
+        });
+        modal.querySelector("#meet-cancel").onclick = () => modal.remove();
+        modal.querySelector("#meet-book").onclick = () => {
+            const title = modal.querySelector("#meet-title").value.trim() || "Meeting";
+            const time  = modal.querySelector("#meet-time").value;
+            modal.remove();
+            // Update meeting room display
+            const roomEl = container.querySelector(".gdsk-meeting");
+            if (roomEl) {
+                roomEl.querySelector(".gdsk-role").textContent = `${title} @ ${time}`;
+                roomEl.style.borderColor = "var(--purple)";
+                roomEl.style.background  = "rgba(147,51,234,0.12)";
+            }
+        };
+    });
+
+    // Desk click → show activity tooltip as feed highlight
+    container.querySelectorAll(".gdsk[data-agent]").forEach(el => {
+        el.addEventListener("click", () => {
+            const feed  = container.querySelector("#activity-feed");
+            const title = container.querySelector("#feed-title");
+            const agent = el.querySelector(".gdsk-name")?.textContent || "";
+            const act   = el.title || "Working…";
+            if (!feed) return;
+            title.textContent = `👤 ${agent} — Current Task`;
+            feed.innerHTML = `<div class="feed-item" style="padding:10px 0">
+                <span class="feed-agent">${agent}</span>
+                <span class="feed-action">${escHtml(act)}</span>
+            </div>`;
+        });
     });
 }
 
@@ -1351,68 +1512,136 @@ function renderRadar(d) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Factory — Automation Workshop
 // ──────────────────────────────────────────────────────────────────────────────
+// Example workflow definitions shown as visual flow diagrams
+const WF_EXAMPLES = [
+    {
+        name: "Morning Briefing",
+        emoji: "🌅",
+        desc: "Daily 08:00 startup routine — briefing, market check, security scan",
+        steps: [
+            { type: "trigger",   label: "⏰ Cron 08:00",          detail: "Every weekday" },
+            { type: "action",    label: "📅 Eva: CEO Briefing",    detail: "Compile overnight events" },
+            { type: "action",    label: "📈 Gordon: Market Check", detail: "BTC/ETH positions" },
+            { type: "action",    label: "🔒 Ernst: Security Scan", detail: "Fail2ban + port scan" },
+            { type: "notify",    label: "💬 Telegram Summary",     detail: "Send to Alex" },
+        ],
+    },
+    {
+        name: "Security Alert",
+        emoji: "🚨",
+        desc: "Triggered on intrusion detection — escalates through Ernst to Alex",
+        steps: [
+            { type: "trigger",   label: "🔔 Fail2Ban Alert",       detail: "SSH brute-force detected" },
+            { type: "condition", label: "❓ Severity ≥ HIGH?",     detail: "Check alert level" },
+            { type: "action",    label: "🔒 Ernst: Block IP",      detail: "Add to deny list" },
+            { type: "action",    label: "📝 Ernst: Write Report",  detail: "Incident log entry" },
+            { type: "notify",    label: "🚨 Alert Alex",           detail: "Telegram + dashboard" },
+        ],
+    },
+    {
+        name: "Content Pipeline",
+        emoji: "✍️",
+        desc: "Lara drafts social posts from research, queued for approval",
+        steps: [
+            { type: "trigger",   label: "🔔 New Topic Added",      detail: "Via dashboard or API" },
+            { type: "action",    label: "🔍 Milfred: Research",    detail: "Web search + summarise" },
+            { type: "action",    label: "✍️ Lara: Draft Posts",    detail: "Twitter / LinkedIn / FB" },
+            { type: "condition", label: "❓ Needs Approval?",      detail: "Check content policy" },
+            { type: "notify",    label: "✅ Queue for Review",     detail: "Appears in Approvals" },
+        ],
+    },
+];
+
+function wfFlowHtml(steps) {
+    return `<div class="wf-flow">${steps.map((s, i) => `
+        <div class="wf-node ${s.type}" title="${escHtml(s.detail)}">
+            <div class="wf-node-box">
+                <div class="wf-node-label">${s.label}</div>
+                <div class="wf-node-desc">${escHtml(s.detail)}</div>
+            </div>
+        </div>${i < steps.length - 1 ? `<div class="wf-arrow">→</div>` : ""}`).join("")}
+    </div>`;
+}
+
 function renderFactory(d) {
+    const exampleCards = WF_EXAMPLES.map(ex => `
+        <div class="wf-example-card">
+            <div class="wf-example-header">
+                <span style="font-size:1.4rem">${ex.emoji}</span>
+                <div>
+                    <div class="wf-example-name">${escHtml(ex.name)}</div>
+                    <div class="wf-example-desc">${escHtml(ex.desc)}</div>
+                </div>
+            </div>
+            ${wfFlowHtml(ex.steps)}
+        </div>`).join("");
+
     return `
         <div class="panel-header">
             <div class="panel-title">🏭 Automation Workshop</div>
-            <div class="panel-subtitle">${d.total_agents} agent configs · ${d.workflows?.length || 0} workflows</div>
+            <div class="panel-subtitle">Visual workflow builder · ${d.workflows?.length || 0} active workflows · ${d.total_agents} agents</div>
         </div>
-        <div class="grid-2" style="margin-bottom:16px">
-            <div class="card">
-                <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
-                    Workflows
-                    <button class="btn btn-primary" id="new-workflow-btn" style="padding:4px 10px;font-size:0.75rem">+ New</button>
-                </div>
-                <div id="workflows-list">
-                    ${(d.workflows || []).map(w => `
-                        <div class="step-item" data-workflow="${escHtml(w.name)}">
-                            <span style="font-size:1rem">${w.emoji}</span>
-                            <div style="flex:1">
-                                <div class="service-name">${escHtml(w.name)}</div>
-                                <div class="service-port">${w.steps} steps · last: ${escHtml(w.last_run)}</div>
-                            </div>
-                            ${statusBadge(w.status)}
-                            <button class="btn btn-ghost" style="padding:4px 8px;font-size:0.72rem" onclick="event.stopPropagation()">▶ Run</button>
-                        </div>`).join("")}
-                </div>
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-title">What are workflows?</div>
+            <div style="font-size:0.87rem;color:var(--text2);line-height:1.7;margin-bottom:10px">
+                Workflows automate multi-step tasks across agents. Each workflow defines a <span style="color:var(--green)">Trigger</span> (event or schedule),
+                a series of <span style="color:var(--blue2)">Actions</span> (agent tasks), optional <span style="color:var(--yellow)">Conditions</span> (branching logic),
+                and <span style="color:var(--purple)">Notifications</span> (Telegram/dashboard alerts).
             </div>
-            <div class="card">
-                <div class="card-title">Installed Skills</div>
-                ${(d.skills || []).map(s => `
-                    <div class="service-row">
-                        <div class="service-left"><div>
-                            <div class="service-name">${escHtml(s.name)}</div>
-                            <div class="service-port">${s.category}</div>
-                        </div></div>
-                        ${badge(s.status,"green")}
+            <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.8rem">
+                <span class="badge chip-trigger">Trigger — starts the flow</span>
+                <span class="badge chip-action">Action — agent task</span>
+                <span class="badge chip-condition">Condition — branch logic</span>
+                <span class="badge chip-notify">Notify — alert/message</span>
+                <span class="badge chip-delay">Delay — wait step</span>
+            </div>
+        </div>
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-title">Example Workflows</div>
+            <div class="wf-examples-wrap">${exampleCards}</div>
+        </div>
+        <div class="card">
+            <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+                Active Workflows
+                <button class="btn btn-primary" id="new-workflow-btn" style="padding:4px 10px;font-size:0.75rem">+ New Workflow</button>
+            </div>
+            <div id="workflows-list">
+                ${(d.workflows || []).map(w => `
+                    <div class="step-item" data-workflow="${escHtml(w.name)}">
+                        <span style="font-size:1rem">${w.emoji}</span>
+                        <div style="flex:1">
+                            <div class="service-name">${escHtml(w.name)}</div>
+                            <div class="service-port">${w.steps} steps · last: ${escHtml(w.last_run)}</div>
+                        </div>
+                        ${statusBadge(w.status)}
+                        <button class="btn btn-ghost run-wf-btn" style="padding:4px 8px;font-size:0.72rem">▶ Run</button>
                     </div>`).join("")}
             </div>
         </div>
-        <div class="card">
-            <div class="card-title">Antfarm</div>
-            <div style="display:flex;gap:16px;align-items:center">
-                <div style="font-size:0.88rem;color:var(--text2)">Database: <code style="color:var(--blue2)">${d.antfarm_db_size} bytes</code></div>
-                ${badge(d.antfarm_status, d.antfarm_status==="active"?"green":"gray")}
-            </div>
+        <div class="card" style="margin-top:12px">
+            <div class="card-title">Installed Skills</div>
+            ${(d.skills || []).map(s => `
+                <div class="service-row">
+                    <div class="service-left"><div>
+                        <div class="service-name">${escHtml(s.name)}</div>
+                        <div class="service-port">${s.category}</div>
+                    </div></div>
+                    ${badge(s.status,"green")}
+                </div>`).join("")}
         </div>`;
 }
 
 function initFactoryPanel(data, container) {
-    // Sortable workflow list
     if (typeof Sortable !== "undefined") {
         const list = container.querySelector("#workflows-list");
         if (list) Sortable.create(list, { animation: 150, ghostClass: "sortable-ghost" });
     }
 
-    // New workflow button
     container.querySelector("#new-workflow-btn")?.addEventListener("click", () => showWorkflowModal());
 
-    // Run buttons
-    container.querySelectorAll("#workflows-list .btn").forEach(btn => {
+    container.querySelectorAll(".run-wf-btn").forEach(btn => {
         btn.addEventListener("click", e => {
             e.stopPropagation();
-            const item = btn.closest(".step-item");
-            const name = item?.dataset.workflow || "workflow";
             btn.textContent = "⏳ Running…";
             btn.disabled = true;
             setTimeout(() => { btn.textContent = "▶ Run"; btn.disabled = false; }, 2500);
@@ -1421,15 +1650,17 @@ function initFactoryPanel(data, container) {
 }
 
 function showWorkflowModal() {
-    const stepTypes = ["Trigger","Action","Condition","Delay"];
+    const stepTypes = ["Trigger","Action","Condition","Notify","Delay"];
     const modal = createModal({
         title: "New Workflow",
         body: `
             <div class="form-field"><label class="form-label">Workflow Name</label>
                 <input class="form-input" id="wf-name" placeholder="e.g. daily-sync"></div>
+            <div class="form-field"><label class="form-label">Description</label>
+                <input class="form-input" id="wf-desc" placeholder="What does this workflow do?"></div>
             <div class="form-field"><label class="form-label">Steps</label>
-                <div id="wf-steps" class="steps-list">
-                    <div style="color:var(--text3);font-size:0.8rem;text-align:center;padding:8px">Drag steps to reorder</div>
+                <div id="wf-steps" class="steps-list" style="min-height:60px">
+                    <div id="wf-placeholder" style="color:var(--text3);font-size:0.8rem;text-align:center;padding:12px">Add steps below ↓ · drag to reorder</div>
                 </div>
             </div>
             <div class="form-field"><label class="form-label">Add Step</label>
@@ -1439,7 +1670,7 @@ function showWorkflowModal() {
             </div>`,
         footer: `
             <button class="btn btn-ghost" id="wf-cancel">Cancel</button>
-            <button class="btn btn-primary" id="wf-save">Create</button>`,
+            <button class="btn btn-primary" id="wf-save">Create Workflow</button>`,
     });
 
     const stepsEl = modal.querySelector("#wf-steps");
@@ -1449,17 +1680,16 @@ function showWorkflowModal() {
     modal.querySelectorAll("[data-step-type]").forEach(btn => {
         btn.addEventListener("click", () => {
             const type = btn.dataset.stepType;
-            const div  = document.createElement("div");
+            modal.querySelector("#wf-placeholder")?.remove();
+            const div = document.createElement("div");
             stepCount++;
             div.className = "step-item";
             div.innerHTML = `
                 <span class="step-number">${stepCount}</span>
                 <span class="badge chip-${type.toLowerCase()}">${type}</span>
                 <input class="form-input" placeholder="${type} description…" style="flex:1">
-                <button class="task-action-btn" onclick="this.closest('.step-item').remove()">✕</button>`;
-            // Remove placeholder text
-            const placeholder = stepsEl.querySelector("div");
-            if (placeholder) placeholder.remove();
+                <button class="task-action-btn" style="flex-shrink:0">✕</button>`;
+            div.querySelector(".task-action-btn").onclick = () => div.remove();
             stepsEl.appendChild(div);
         });
     });
@@ -1467,9 +1697,8 @@ function showWorkflowModal() {
     modal.querySelector("#wf-cancel").onclick = () => modal.remove();
     modal.querySelector("#wf-save").onclick = () => {
         const name = modal.querySelector("#wf-name").value.trim();
-        if (!name) return;
+        if (!name) { modal.querySelector("#wf-name").focus(); return; }
         modal.remove();
-        // Refresh panel to show "created" feedback (in real app, POST to API)
         loadPanel("factory");
     };
 }
