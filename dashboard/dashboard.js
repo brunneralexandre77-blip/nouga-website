@@ -2,11 +2,154 @@
    Nouga Mission Control — Dashboard JS  (Phase 2)
 ============================================================ */
 
-const API = "http://100.77.150.110:5001/api";
+const API    = "http://100.77.150.110:5001/api";
+const WS_URL = "http://100.77.150.110:5001";
 const REFRESH_MS = 30000;
 let activePanel = "tasks";
 let refreshTimer = null;
 let lastUpdate   = null;
+
+// ──────────────────────────────────────────────────────────────────────────────
+// WebSocket / Real-time notifications
+// ──────────────────────────────────────────────────────────────────────────────
+let socket      = null;
+let wsConnected = false;
+let notifCount  = 0;
+const notifLog  = [];  // newest first, capped at 100
+
+const NOTIF_META = {
+    task:    { icon: "📋", color: "blue",   label: "Task"    },
+    agent:   { icon: "🤖", color: "green",  label: "Agent"   },
+    cron:    { icon: "⏱️",  color: "yellow", label: "Cron"    },
+    system:  { icon: "⚙️",  color: "gray",   label: "System"  },
+    council: { icon: "🏛️", color: "purple", label: "Council" },
+    generic: { icon: "🔔", color: "gray",   label: "Event"   },
+};
+
+function initWebSocket() {
+    if (typeof io === "undefined") {
+        console.warn("[WS] Socket.IO client not loaded");
+        return;
+    }
+    socket = io(WS_URL, {
+        transports: ["websocket", "polling"],
+        reconnectionDelay: 2000,
+        reconnectionAttempts: 10,
+    });
+
+    socket.on("connect", () => {
+        wsConnected = true;
+        _wsStatus(true);
+        socket.emit("subscribe", {
+            agent: "milfred",
+            types: ["task", "agent", "cron", "system", "council"],
+        });
+        console.log("[WS] Connected to Nouga Mission Control");
+    });
+
+    socket.on("disconnect", () => {
+        wsConnected = false;
+        _wsStatus(false);
+        console.warn("[WS] Disconnected");
+    });
+
+    socket.on("subscribed", data => {
+        _addNotif({ type: "system", payload: { message: `Milfred subscribed — watching: ${data.types.join(", ")}` }, timestamp: new Date().toISOString() });
+        console.log("[WS] Subscribed:", data);
+    });
+
+    socket.on("notification", notif => {
+        _addNotif(notif);
+        _showToast(notif);
+        _bumpBadge();
+        // Reload the active panel if it matches the event type
+        const reload = { task: "tasks", agent: "agents", cron: "calendar", council: "council" };
+        if (reload[notif.type] && activePanel === reload[notif.type]) loadPanel(activePanel);
+    });
+}
+
+function _wsStatus(online) {
+    const dot   = document.getElementById("ws-dot");
+    const label = document.getElementById("ws-label");
+    if (dot)   dot.className = online ? "dot-green" : "dot-red";
+    if (label) label.textContent = online ? "Milfred online" : "WS offline";
+}
+
+function _bumpBadge() {
+    notifCount++;
+    const b = document.getElementById("notif-badge");
+    if (b) { b.textContent = notifCount; b.style.display = "flex"; }
+}
+
+function _clearBadge() {
+    notifCount = 0;
+    const b = document.getElementById("notif-badge");
+    if (b) b.style.display = "none";
+}
+
+function _addNotif(notif) {
+    notifLog.unshift(notif);
+    if (notifLog.length > 100) notifLog.pop();
+    const list = document.getElementById("notif-list");
+    if (list) _renderNotifList(list);
+}
+
+function _showToast(notif) {
+    const meta = NOTIF_META[notif.type] || NOTIF_META.generic;
+    const msg  = notif.payload?.message || notif.payload?.title || notif.payload?.topic
+               || JSON.stringify(notif.payload || "").slice(0, 70);
+    const wrap = document.getElementById("notif-toasts");
+    if (!wrap) return;
+
+    const t = document.createElement("div");
+    t.className = `notif-toast ntc-${meta.color}`;
+    t.innerHTML = `
+        <div class="notif-toast-icon">${meta.icon}</div>
+        <div class="notif-toast-body">
+            <div class="notif-toast-type">${meta.label}</div>
+            <div class="notif-toast-msg">${escHtml(msg)}</div>
+        </div>
+        <button class="notif-toast-close" aria-label="dismiss">✕</button>`;
+    wrap.appendChild(t);
+    t.querySelector(".notif-toast-close").onclick = () => t.remove();
+    requestAnimationFrame(() => requestAnimationFrame(() => t.classList.add("show")));
+    setTimeout(() => { t.classList.remove("show"); setTimeout(() => t.remove(), 300); }, 4500);
+}
+
+function _renderNotifList(list) {
+    if (!notifLog.length) {
+        list.innerHTML = `<div class="notif-empty">No notifications yet</div>`;
+        return;
+    }
+    list.innerHTML = notifLog.map(n => {
+        const meta = NOTIF_META[n.type] || NOTIF_META.generic;
+        const msg  = n.payload?.message || n.payload?.title || n.payload?.topic
+                   || (typeof n.payload === "string" ? n.payload.slice(0, 80) : JSON.stringify(n.payload || "").slice(0, 80));
+        const time = n.timestamp ? new Date(n.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "now";
+        return `
+            <div class="notif-item ntc-${meta.color}">
+                <div class="notif-item-icon">${meta.icon}</div>
+                <div class="notif-item-body">
+                    <div class="notif-item-header">
+                        <span class="notif-item-type">${meta.label}</span>
+                        <span class="notif-item-time">${time}</span>
+                    </div>
+                    <div class="notif-item-msg">${escHtml(msg)}</div>
+                </div>
+            </div>`;
+    }).join("");
+}
+
+function toggleNotifDrawer() {
+    const drawer = document.getElementById("notif-drawer");
+    if (!drawer) return;
+    const open = drawer.classList.toggle("open");
+    if (open) {
+        _clearBadge();
+        const list = document.getElementById("notif-list");
+        if (list) _renderNotifList(list);
+    }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // API helpers
@@ -1838,9 +1981,25 @@ document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".nav-item").forEach(el => {
         el.addEventListener("click", () => navigate(el.dataset.panel));
     });
+
+    // Notification bell
+    document.getElementById("notif-bell")?.addEventListener("click", toggleNotifDrawer);
+    document.getElementById("notif-drawer-close")?.addEventListener("click", () => {
+        document.getElementById("notif-drawer")?.classList.remove("open");
+    });
+    // Close drawer on outside click
+    document.addEventListener("click", e => {
+        const drawer = document.getElementById("notif-drawer");
+        const bell   = document.getElementById("notif-bell");
+        if (drawer?.classList.contains("open") && !drawer.contains(e.target) && !bell?.contains(e.target)) {
+            drawer.classList.remove("open");
+        }
+    });
+
     navigate("tasks");
     startRefresh();
     checkHealth();
+    initWebSocket();
     setInterval(updateClock,      1000);
     setInterval(updateStatusBar,  5000);
     setInterval(checkHealth,     60000);
