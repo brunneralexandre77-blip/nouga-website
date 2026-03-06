@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nougat AI - Trading Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            text-align: center;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        h1 { font-size: 2.5em; margin-bottom: 20px; }
+        .status { 
+            background: rgba(255,255,255,0.2); 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin: 20px 0;
+        }
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .status-item:last-child { border-bottom: none; }
+        .online { color: #4ade80; }
+        .offline { color: #f87171; }
+        .btn {
+            display: inline-block;
+            background: white;
+            color: #667eea;
+            padding: 15px 30px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .note {
+            margin-top: 30px;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📊 Trading Dashboard</h1>
+        <p>Freqtrade Trading Bot Status</p>
+        
+        <div class="status">
+            <div class="status-item">
+                <span>Bot Status</span>
+                <span class="online">● Online</span>
+            </div>
+            <div class="status-item">
+                <span>Mode</span>
+                <span>Paper Trading</span>
+            </div>
+            <div class="status-item">
+                <span>Strategy</span>
+                <span>SafeTrendFollowing</span>
+            </div>
+            <div class="status-item">
+                <span>Asset</span>
+                <span>BTC/USDT</span>
+            </div>
+        </div>
+        
+        <a href="http://localhost:8080" class="btn">Open Full Dashboard</a>
+        
+        <p class="note">
+            ⚠️ Full dashboard currently requires local access.<br>
+            Cloudflare tunnel setup pending authentication.
+        </p>
+    </div>
+</body>
+</html>

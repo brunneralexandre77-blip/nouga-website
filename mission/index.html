@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nougat AI - Mission Control</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            padding: 20px;
+        }
+        .container {
+            max-width: 600px;
+            text-align: center;
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            padding: 40px;
+            border-radius: 20px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+        }
+        h1 { font-size: 2.5em; margin-bottom: 20px; }
+        .systems { 
+            background: rgba(255,255,255,0.2); 
+            padding: 20px; 
+            border-radius: 10px; 
+            margin: 20px 0;
+            text-align: left;
+        }
+        .system-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+        }
+        .system-item:last-child { border-bottom: none; }
+        .online { color: #4ade80; }
+        .offline { color: #f87171; }
+        .btn {
+            display: inline-block;
+            background: white;
+            color: #11998e;
+            padding: 15px 30px;
+            border-radius: 30px;
+            text-decoration: none;
+            font-weight: bold;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .note {
+            margin-top: 30px;
+            font-size: 0.9em;
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Mission Control</h1>
+        <p>System Overview & Status</p>
+        
+        <div class="systems">
+            <div class="system-item">
+                <span>🤖 Trading Bot</span>
+                <span class="online">● Running</span>
+            </div>
+            <div class="system-item">
+                <span>📊 Dashboard</span>
+                <span class="online">● Online</span>
+            </div>
+            <div class="system-item">
+                <span>🌐 Website</span>
+                <span class="online">● Live</span>
+            </div>
+            <div class="system-item">
+                <span>☁️ Cloudflare</span>
+                <span class="online">● Active</span>
+            </div>
+        </div>
+        
+        <a href="http://localhost:8502" class="btn">Open Mission Control</a>
+        
+        <p class="note">
+            ⚠️ Full Mission Control requires local access.<br>
+            Cloudflare tunnel setup pending authentication.
+        </p>
+    </div>
+</body>
+</html>
