@@ -392,7 +392,7 @@ function initTasksPanel(data, container) {
     // Load parking lot async
     (async () => {
         try {
-            const r = await fetch(`${API_BASE}/parking-lot`);
+            const r = await fetch(`${API}/parking-lot`);
             const j = await r.json();
             _parkingLotData = j.data?.items || [];
             const plList = container.querySelector("#list-parking_lot");
@@ -613,7 +613,7 @@ let _availableModels = null;  // cached from /api/models
 async function loadAvailableModels() {
     if (_availableModels) return _availableModels;
     try {
-        const r = await fetch(`${API_BASE}/models`);
+        const r = await fetch(`${API}/models`);
         const j = await r.json();
         _availableModels = j.data?.models || [];
     } catch(e) {
