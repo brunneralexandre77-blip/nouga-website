@@ -810,16 +810,28 @@ function renderAgentDetail(agent, d) {
 }
 
 function initAgentsPanel(data, container) {
-    // Pre-load models so dropdown is populated when user clicks an agent
-    loadAvailableModels();
+    // Pre-load models eagerly; if an agent detail is already visible, patch dropdown after load
+    loadAvailableModels().then(() => {
+        const sel = container.querySelector("[id^='model-select-']");
+        if (sel && _availableModels?.length) {
+            const agentId = sel.id.replace("model-select-", "");
+            const agent = data.agents?.find(a => a.id === agentId);
+            const currentVal = sel.value;
+            sel.innerHTML = _availableModels.map(m =>
+                `<option value="${m.short_id}"${(agent?.model === m.short_id || currentVal === m.short_id) ? " selected" : ""}>${m.type === "local" ? "⚡ " : "☁️ "}${m.name}</option>`
+            ).join("");
+        }
+    });
 
     container.querySelectorAll(".org-node-btn[data-agent-id]").forEach(btn => {
-        btn.addEventListener("click", () => {
+        btn.addEventListener("click", async () => {
             const agentId = btn.dataset.agentId;
             _selectedAgent = (_selectedAgent === agentId) ? null : agentId;
             const detailEl = container.querySelector("#agent-detail");
             if (detailEl) {
                 const agent = data.agents?.find(a => a.id === agentId);
+                // Always await models before rendering so dropdown has full list
+                await loadAvailableModels();
                 detailEl.innerHTML = _selectedAgent
                     ? renderAgentDetail(agent, data)
                     : `<div style="padding:24px;text-align:center;color:var(--text3);font-size:0.88rem"><div style="font-size:2rem;margin-bottom:8px">🤖</div>Click an agent node to view details</div>`;
