@@ -29,12 +29,16 @@ const NOTIF_META = {
 function initWebSocket() {
     if (typeof io === "undefined") {
         console.warn("[WS] Socket.IO client not loaded");
+        _wsStatus(false);
         return;
     }
+    _wsStatus("connecting");
     socket = io(WS_URL, {
-        transports: ["websocket", "polling"],
-        reconnectionDelay: 2000,
-        reconnectionAttempts: 10,
+        transports: ["polling", "websocket"],
+        reconnectionDelay: 3000,
+        reconnectionAttempts: 15,
+        timeout: 10000,
+        upgrade: true,
     });
 
     socket.on("connect", () => {
@@ -44,13 +48,29 @@ function initWebSocket() {
             agent: "milfred",
             types: ["task", "agent", "cron", "system", "council"],
         });
-        console.log("[WS] Connected to Nouga Mission Control");
+        console.log("[WS] Connected:", socket.id);
     });
 
-    socket.on("disconnect", () => {
+    socket.on("disconnect", (reason) => {
         wsConnected = false;
         _wsStatus(false);
-        console.warn("[WS] Disconnected");
+        console.warn("[WS] Disconnected:", reason);
+    });
+
+    socket.on("connect_error", (err) => {
+        wsConnected = false;
+        _wsStatus(false);
+        console.error("[WS] Connection error:", err.message);
+    });
+
+    socket.on("reconnect_attempt", (n) => {
+        _wsStatus("connecting");
+        console.log(`[WS] Reconnect attempt ${n}…`);
+    });
+
+    socket.on("reconnect_failed", () => {
+        _wsStatus(false);
+        console.error("[WS] All reconnect attempts failed");
     });
 
     socket.on("subscribed", data => {
@@ -62,17 +82,25 @@ function initWebSocket() {
         _addNotif(notif);
         _showToast(notif);
         _bumpBadge();
-        // Reload the active panel if it matches the event type
         const reload = { task: "tasks", agent: "agents", cron: "calendar", council: "council" };
         if (reload[notif.type] && activePanel === reload[notif.type]) loadPanel(activePanel);
     });
 }
 
-function _wsStatus(online) {
+function _wsStatus(state) {
     const dot   = document.getElementById("ws-dot");
     const label = document.getElementById("ws-label");
-    if (dot)   dot.className = online ? "dot-green" : "dot-red";
-    if (label) label.textContent = online ? "Milfred online" : "WS offline";
+    if (!dot || !label) return;
+    if (state === true) {
+        dot.className = "dot-green";
+        label.textContent = "Milfred online";
+    } else if (state === "connecting") {
+        dot.className = "dot-yellow";
+        label.textContent = "Connecting…";
+    } else {
+        dot.className = "dot-red";
+        label.textContent = "WS offline";
+    }
 }
 
 function _bumpBadge() {
@@ -205,6 +233,80 @@ function loading() { return `<div class="loading"><div class="spinner"></div> Lo
 function errorBox(msg) { return `<div class="error-box">⚠️ ${msg}</div>`; }
 function escHtml(s) { return String(s || "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
 
+function _chatBubble(role, text, ts) {
+    const time = ts ? new Date(ts).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
+    if (role === "user") return `<div style="text-align:right;margin-bottom:3px"><span style="background:var(--blue1,#1a3a6e);color:#fff;border-radius:12px 12px 2px 12px;padding:4px 10px;display:inline-block;max-width:88%;word-wrap:break-word">${escHtml(text)}</span><div style="font-size:0.65rem;color:var(--text3,#888);margin-top:1px">${time}</div></div>`;
+    return `<div style="text-align:left;margin-bottom:5px"><span style="background:var(--bg3,#222236);color:var(--text2,#ccc);border-radius:12px 12px 12px 2px;padding:4px 10px;display:inline-block;max-width:88%;word-wrap:break-word">${escHtml(text)}</span></div>`;
+}
+function _chatBubbles(m) {
+    let html = "";
+    if (m.user_msg)    html += _chatBubble("user",  m.user_msg,    m.created_at);
+    if (m.agent_reply) html += _chatBubble("agent", m.agent_reply, m.created_at);
+    return html;
+}
+function _taskStatusColor(s) {
+    if (s === "in_progress") return "var(--blue2,#5b8def)";
+    if (s === "done")        return "var(--green,#34c759)";
+    return "var(--text3,#888)";
+}
+function _taskStatusLabel(s) {
+    if (s === "in_progress") return "▶";
+    if (s === "done")        return "✓";
+    return "●";
+}
+function enableDragWidget(widget, onDragEnd, skipTags = ["SELECT", "BUTTON", "INPUT"]) {
+    let ox = 0, oy = 0;
+    const onMove = e => {
+        widget.style.left = (e.clientX - ox) + "px";
+        widget.style.top  = (e.clientY - oy) + "px";
+    };
+    const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup",   onUp);
+        onDragEnd();
+    };
+    widget.addEventListener("mousedown", e => {
+        if (skipTags.includes(e.target.tagName)) return;
+        ox = e.clientX - widget.offsetLeft;
+        oy = e.clientY - widget.offsetTop;
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup",   onUp);
+    });
+}
+
+function enableResizeWidget(widget, getBodyEl, onResize) {
+    const grip = document.createElement("div");
+    grip.style.cssText = "position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:se-resize;z-index:2;color:var(--text3,#555);font-size:9px;line-height:14px;text-align:right;padding-right:2px;pointer-events:auto";
+    grip.textContent = "◢";
+    widget.appendChild(grip);
+
+    grip.addEventListener("mousedown", e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const startX = e.clientX;
+        const startY = e.clientY;
+        const startW = widget.offsetWidth;
+        const bodyEl = getBodyEl();
+        const startH = bodyEl ? bodyEl.offsetHeight : 0;
+        const onMove = mv => {
+            const newW = Math.max(240, Math.min(window.innerWidth * 0.9, startW + (mv.clientX - startX)));
+            const newH = Math.max(80, startH + (mv.clientY - startY));
+            widget.style.width = newW + "px";
+            const b = getBodyEl();
+            if (b) b.style.height = newH + "px";
+            onResize(newW, newH);
+        };
+        const onUp = () => {
+            document.removeEventListener("mousemove", onMove);
+            document.removeEventListener("mouseup", onUp);
+        };
+        document.addEventListener("mousemove", onMove);
+        document.addEventListener("mouseup", onUp);
+    });
+
+    return { grip, reattach: () => { if (!widget.contains(grip)) widget.appendChild(grip); } };
+}
+
 function badge(text, color) { return `<span class="badge badge-${color}">${escHtml(text)}</span>`; }
 function statusBadge(s) {
     if (!s) return badge("unknown","gray");
@@ -251,8 +353,23 @@ let _tasksData = null;
 
 let _parkingLotData = null;
 
+let _taskAgentFilter = "all";
+
 function renderTasks(d) {
     _tasksData = d;
+    const FILTER_AGENTS = ["all","Milfred","Ernst","Gordon","Lara","Claude","Eva","Alex","Council"];
+    const filterBar = `
+        <div class="task-filter-bar">
+            ${FILTER_AGENTS.map(a => `
+                <button class="task-filter-btn${_taskAgentFilter===a?" active":""}" data-agent="${a}">
+                    ${a==="all"?"👥 All":a}
+                </button>`).join("")}
+        </div>`;
+
+    const filterItems = (items) => _taskAgentFilter === "all"
+        ? items
+        : items.filter(t => (t.assignee||"").toLowerCase() === _taskAgentFilter.toLowerCase());
+
     const col = (id, title, items) => `
         <div class="kanban-col">
             <div class="kanban-header">
@@ -271,7 +388,10 @@ function renderTasks(d) {
         <div class="kanban-col kanban-col-pl">
             <div class="kanban-header">
                 <span>🅿️ Parking Lot</span>
-                <span class="kanban-count" id="count-parking_lot">…</span>
+                <div style="display:flex;align-items:center;gap:6px">
+                    <span class="kanban-count" id="count-parking_lot">…</span>
+                    <button class="kanban-add-btn" id="pl-add-btn" title="Add idea">+</button>
+                </div>
             </div>
             <div class="kanban-body" id="list-parking_lot" data-status="parking_lot">
                 <div class="pl-loading">Loading…</div>
@@ -283,11 +403,12 @@ function renderTasks(d) {
             <div class="panel-title">📋 Tasks</div>
             <div class="panel-subtitle">Drag cards between columns · click to edit · drag 🅿️ to activate</div>
         </div>
+        ${filterBar}
         <div class="kanban kanban-4col">
             ${plCol}
-            ${col("todo",        "📥 To Do",      d.todo)}
-            ${col("in_progress", "🔄 In Progress", d.in_progress)}
-            ${col("done",        "✅ Done",        d.done)}
+            ${col("todo",        "📥 To Do",      filterItems(d.todo))}
+            ${col("in_progress", "🔄 In Progress", filterItems(d.in_progress))}
+            ${col("done",        "✅ Done",        filterItems(d.done))}
         </div>
         ${d.cron_jobs?.length ? `
         <div style="margin-top:20px"><div class="card">
@@ -298,67 +419,103 @@ function renderTasks(d) {
 
 function plCard(item) {
     const stars = item.priority || "";
-    const statusClass = item.status === "completed" ? "pl-card-done" : item.status === "active" ? "pl-card-active" : "";
     return `
-        <div class="pl-card ${statusClass}" data-pl-id="${item.id}" data-pl-number="${item.number}">
+        <div class="pl-card" data-pl-id="${item.id}" data-pl-number="${item.number}">
+            <div class="task-card-actions">
+                <button class="task-action-btn pl-btn-edit"   data-pl-id="${item.id}" title="Edit">✎</button>
+                <button class="task-action-btn pl-btn-delete" data-pl-id="${item.id}" title="Delete">✕</button>
+            </div>
             <div class="pl-card-num">#${item.number}</div>
             <div class="pl-card-title">${escHtml(item.title)}</div>
             ${stars ? `<div class="pl-card-stars">${stars}</div>` : ""}
-            ${item.value ? `<div class="pl-card-value">💰 ${escHtml(item.value)}</div>` : ""}
+            ${item.value  ? `<div class="pl-card-value">💰 ${escHtml(item.value)}</div>` : ""}
             ${item.effort ? `<div class="pl-card-effort">⏱ ${escHtml(item.effort)}</div>` : ""}
-            <div class="pl-card-actions">
-                <button class="btn btn-ghost pl-btn-detail" data-pl-id="${item.id}" style="font-size:0.7rem;padding:3px 8px">Details</button>
-                ${item.status === "parking_lot" ? `<button class="btn btn-primary pl-btn-activate" data-pl-id="${item.id}" style="font-size:0.7rem;padding:3px 8px">Activate →</button>` : ""}
+            <div class="pl-card-actions" style="margin-top:6px">
+                <button class="btn btn-primary pl-btn-activate" data-pl-id="${item.id}" style="font-size:0.7rem;padding:3px 8px;width:100%">🚀 Activate →</button>
             </div>
         </div>`;
 }
 
+function _plFormBody(item) {
+    const p = item?.priority || "";
+    return `
+        <div class="form-field"><label class="form-label">Title *</label>
+            <input class="form-input" id="plf-title" value="${escHtml(item?.title||"")}" placeholder="Idea title"></div>
+        <div class="form-field"><label class="form-label">Description</label>
+            <textarea class="form-textarea" id="plf-desc" placeholder="What is this about?">${escHtml(item?.description||"")}</textarea></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="form-field"><label class="form-label">Category</label>
+                <input class="form-input" id="plf-cat" value="${escHtml(item?.category||"")}" placeholder="e.g. Revenue"></div>
+            <div class="form-field"><label class="form-label">Priority</label>
+                <select class="form-select" id="plf-priority">
+                    ${["","⭐","⭐⭐","⭐⭐⭐"].map(s=>`<option value="${s}"${p===s?" selected":""}>${s||"— None —"}</option>`).join("")}
+                </select></div>
+            <div class="form-field"><label class="form-label">Value estimate</label>
+                <input class="form-input" id="plf-value" value="${escHtml(item?.value||"")}" placeholder="e.g. €5k/mo"></div>
+            <div class="form-field"><label class="form-label">Effort estimate</label>
+                <input class="form-input" id="plf-effort" value="${escHtml(item?.effort||"")}" placeholder="e.g. 2 weeks"></div>
+        </div>`;
+}
+
 function showPLModal(item, container) {
+    // Legacy path — redirect to edit modal
+    showPLEditModal(item, container);
+}
+
+function showPLEditModal(item, container) {
+    const isNew = !item?.id;
     const modal = createModal({
-        title: `#${item.number}: ${item.title} ${item.priority || ""}`,
-        body: `
-            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
-                <div><div class="form-label">Category</div><div style="color:var(--text2);font-size:0.85rem">${escHtml(item.category||"—")}</div></div>
-                <div><div class="form-label">Status</div><div style="color:var(--text2);font-size:0.85rem">${escHtml(item.status)}</div></div>
-                ${item.value  ? `<div><div class="form-label">Value</div><div style="color:var(--green);font-weight:600;font-size:0.9rem">${escHtml(item.value)}</div></div>` : ""}
-                ${item.effort ? `<div><div class="form-label">Effort</div><div style="color:var(--yellow);font-size:0.85rem">${escHtml(item.effort)}</div></div>` : ""}
-            </div>
-            ${item.description ? `<div class="form-label">Description</div><div style="color:var(--text2);font-size:0.85rem;line-height:1.5;margin-top:6px">${escHtml(item.description)}</div>` : ""}`,
+        title: isNew ? "💡 New Parking Lot Idea" : `✎ Edit #${item.number}: ${item.title}`,
+        body: _plFormBody(item),
         footer: `
-            <button class="btn btn-ghost" id="pl-m-cancel">Close</button>
-            ${item.status === "parking_lot" ? `<button class="btn btn-primary" id="pl-m-activate">🚀 Activate Project</button>` : ""}
-            ${item.status === "active" ? `<button class="btn btn-success" id="pl-m-complete">✅ Mark Complete</button>` : ""}`,
+            ${!isNew ? `<button class="btn btn-danger" id="plf-delete">Delete</button>` : ""}
+            <button class="btn btn-ghost" id="plf-cancel">Cancel</button>
+            <button class="btn btn-primary" id="plf-save">${isNew ? "Add Idea" : "Save"}</button>`,
     });
 
-    modal.querySelector("#pl-m-cancel").onclick = () => modal.remove();
+    modal.querySelector("#plf-cancel").onclick = () => modal.remove();
 
-    const activateBtn = modal.querySelector("#pl-m-activate");
-    if (activateBtn) {
-        activateBtn.onclick = async () => {
-            activateBtn.disabled = true; activateBtn.textContent = "Activating…";
+    if (!isNew) {
+        modal.querySelector("#plf-delete").onclick = async () => {
+            if (!confirm(`Delete #${item.number}: ${item.title}?`)) return;
             try {
-                await apiPost(`parking-lot/${item.id}/activate`, {});
+                await apiDelete(`parking-lot/${item.id}`);
                 modal.remove();
                 loadPanel("tasks");
-            } catch(e) { activateBtn.disabled = false; activateBtn.textContent = "Activate"; alert(e.message); }
+            } catch(e) { alert("Delete failed: " + e.message); }
         };
     }
 
-    const completeBtn = modal.querySelector("#pl-m-complete");
-    if (completeBtn) {
-        completeBtn.onclick = async () => {
-            completeBtn.disabled = true; completeBtn.textContent = "Saving…";
-            try {
-                await apiPost(`parking-lot/${item.id}/complete`, {});
-                modal.remove();
-                loadPanel("tasks");
-            } catch(e) { completeBtn.disabled = false; completeBtn.textContent = "Mark Complete"; alert(e.message); }
+    modal.querySelector("#plf-save").onclick = async () => {
+        const title = modal.querySelector("#plf-title").value.trim();
+        if (!title) { modal.querySelector("#plf-title").focus(); return; }
+        const body = {
+            title,
+            description: modal.querySelector("#plf-desc").value,
+            category:    modal.querySelector("#plf-cat").value,
+            priority:    modal.querySelector("#plf-priority").value,
+            value:       modal.querySelector("#plf-value").value,
+            effort:      modal.querySelector("#plf-effort").value,
         };
-    }
+        const saveBtn = modal.querySelector("#plf-save");
+        saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+        try {
+            if (isNew) await apiPost("parking-lot", body);
+            else       await apiPut(`parking-lot/${item.id}`, body);
+            modal.remove();
+            loadPanel("tasks");
+        } catch(e) {
+            saveBtn.disabled = false; saveBtn.textContent = isNew ? "Add Idea" : "Save";
+            alert("Save failed: " + e.message);
+        }
+    };
+
+    setTimeout(() => modal.querySelector("#plf-title")?.focus(), 50);
 }
 
 function taskCard(t) {
     const pClass = `priority-${(t.priority||"normal").toLowerCase()}`;
+    const stars = t.priority === "high" ? "⭐⭐⭐" : t.priority === "medium" ? "⭐⭐" : t.priority === "low" ? "⭐" : "";
     return `
         <div class="task-card ${pClass}" data-id="${t.id}" data-status="${t.status}">
             <div class="task-card-actions">
@@ -367,9 +524,9 @@ function taskCard(t) {
             </div>
             <div class="task-title">${escHtml(t.title)}</div>
             <div class="task-meta">
-                <span class="tag">${escHtml(t.tag || "")}</span>
                 <span class="task-assignee">👤 ${escHtml(t.assignee || "")}</span>
-                ${badge(t.priority || "normal", t.priority === "high" ? "red" : t.priority === "medium" ? "yellow" : "gray")}
+                ${stars ? `<span style="font-size:0.72rem">${stars}</span>` : ""}
+                ${t.tag ? `<span class="tag">${escHtml(t.tag)}</span>` : ""}
             </div>
         </div>`;
 }
@@ -389,48 +546,81 @@ function updateKanbanCounts(container) {
 }
 
 function initTasksPanel(data, container) {
+    // Agent filter buttons
+    container.querySelectorAll(".task-filter-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            _taskAgentFilter = btn.dataset.agent;
+            loadPanel("tasks");
+        });
+    });
+
     // Load parking lot async
     (async () => {
         try {
             const r = await fetch(`${API}/parking-lot`);
             const j = await r.json();
             _parkingLotData = j.data?.items || [];
+            const visiblePL = _parkingLotData.filter(i => i.status === "parking_lot");
             const plList = container.querySelector("#list-parking_lot");
             const plCount = container.querySelector("#count-parking_lot");
             if (plList) {
-                plList.innerHTML = _parkingLotData.length
-                    ? _parkingLotData.map(plCard).join("")
+                plList.innerHTML = visiblePL.length
+                    ? visiblePL.map(plCard).join("")
                     : `<div class="pl-loading" style="color:var(--text3)">No items</div>`;
             }
-            if (plCount) plCount.textContent = _parkingLotData.length;
+            if (plCount) plCount.textContent = visiblePL.length;
 
-            // Wire parking lot buttons
-            plList?.querySelectorAll(".pl-btn-detail").forEach(btn => {
+            // "+" button — add new parking lot idea
+            container.querySelector("#pl-add-btn")?.addEventListener("click", () => {
+                showPLEditModal(null, container);
+            });
+
+            // Edit buttons
+            plList?.querySelectorAll(".pl-btn-edit").forEach(btn => {
                 btn.addEventListener("click", e => {
                     e.stopPropagation();
                     const item = _parkingLotData.find(i => String(i.id) === btn.dataset.plId);
-                    if (item) showPLModal(item, container);
+                    if (item) showPLEditModal(item, container);
                 });
             });
+
+            // Delete buttons
+            plList?.querySelectorAll(".pl-btn-delete").forEach(btn => {
+                btn.addEventListener("click", async e => {
+                    e.stopPropagation();
+                    const item = _parkingLotData.find(i => String(i.id) === btn.dataset.plId);
+                    if (!item || !confirm(`Delete #${item.number}: ${item.title}?`)) return;
+                    try {
+                        await apiDelete(`parking-lot/${item.id}`);
+                        loadPanel("tasks");
+                    } catch(err2) { alert("Delete failed: " + err2.message); }
+                });
+            });
+
+            // Activate buttons
             plList?.querySelectorAll(".pl-btn-activate").forEach(btn => {
                 btn.addEventListener("click", async e => {
                     e.stopPropagation();
                     const item = _parkingLotData.find(i => String(i.id) === btn.dataset.plId);
                     if (!item) return;
-                    btn.disabled = true; btn.textContent = "…";
+                    btn.disabled = true; btn.textContent = "Activating…";
                     try {
-                        await apiPost(`parking-lot/${item.id}/activate`, {});
-                        loadPanel("tasks");
-                    } catch(err2) { btn.disabled = false; btn.textContent = "Activate →"; }
+                        const result = await apiPost(`parking-lot/${item.id}/activate`, {});
+                        if (result.already_activated) {
+                            btn.textContent = "✓ Already active";
+                        } else {
+                            loadPanel("tasks");
+                        }
+                    } catch(err2) { btn.disabled = false; btn.textContent = "🚀 Activate →"; alert(err2.message); }
                 });
             });
 
-            // Card click → detail modal
+            // Card click → edit modal (not on action buttons)
             plList?.querySelectorAll(".pl-card").forEach(card => {
                 card.addEventListener("click", e => {
-                    if (e.target.closest(".pl-btn-detail, .pl-btn-activate")) return;
+                    if (e.target.closest(".pl-btn-edit, .pl-btn-delete, .pl-btn-activate")) return;
                     const item = _parkingLotData.find(i => String(i.id) === card.dataset.plId);
-                    if (item) showPLModal(item, container);
+                    if (item) showPLEditModal(item, container);
                 });
             });
         } catch(e) {
@@ -478,8 +668,13 @@ function initTasksPanel(data, container) {
                 onEnd: async evt => {
                     const taskId = evt.item.dataset.id;
                     if (!taskId) return; // parking lot card dropped back
-                    const newStatus = evt.to.dataset.status;
-                    if (evt.from === evt.to) return;
+                    const newStatus = evt.to?.dataset?.status;
+                    if (!newStatus) return;
+                    if (evt.from === evt.to) {
+                        // within-column reorder — persist new position
+                        apiPut(`tasks/${taskId}`, { position: evt.newIndex }).catch(() => {});
+                        return;
+                    }
                     const fromEl = evt.from;
                     try {
                         await apiPut(`tasks/${taskId}`, { status: newStatus });
@@ -552,10 +747,15 @@ function showTaskModal(task, editId, container) {
                     ${["high","medium","low","normal"].map(v=>`<option value="${v}"${p===v?" selected":""}>${v}</option>`).join("")}
                 </select></div>
             <div class="form-field"><label class="form-label">Assignee</label>
-                <input class="form-input" id="m-assignee" value="${escHtml(task.assignee||"")}" placeholder="e.g. Claude, Milfred"></div>
+                <select class="form-select" id="m-assignee">
+                    ${["","Milfred","Ernst","Gordon","Lara","Claude","Eva","Alex","Council"].map(a=>`<option value="${a}"${(task.assignee||"")=== a?" selected":""}>${a||"— Unassigned —"}</option>`).join("")}
+                </select></div>
             <div class="form-field"><label class="form-label">Tag</label>
                 <input class="form-input" id="m-tag" value="${escHtml(task.tag||"")}" placeholder="e.g. security, dev, trading"></div>
-            <input type="hidden" id="m-status" value="${escHtml(s)}">`,
+            <div class="form-field"><label class="form-label">Status</label>
+                <select class="form-select" id="m-status">
+                    ${[["todo","To Do"],["in_progress","In Progress"],["done","Done"]].map(([v,l])=>`<option value="${v}"${s===v?" selected":""}>${l}</option>`).join("")}
+                </select></div>`,
         footer: `
             ${isEdit ? `<button class="btn btn-danger" id="m-delete">Delete</button>` : ""}
             <button class="btn btn-ghost" id="m-cancel">Cancel</button>
@@ -753,6 +953,7 @@ function renderAgentDetail(agent, d) {
         </div>
         <div class="agent-tabs-nav">
             <button class="agent-tab-btn active" data-tab="role">Role</button>
+            <button class="agent-tab-btn" data-tab="tasks">Tasks</button>
             <button class="agent-tab-btn" data-tab="soul">Soul</button>
             <button class="agent-tab-btn" data-tab="tools">Tools</button>
             <button class="agent-tab-btn" data-tab="memory">Memory</button>
@@ -760,12 +961,16 @@ function renderAgentDetail(agent, d) {
 
         <div class="agent-tab-pane active" data-pane="role">
             <div class="agent-detail-label" style="margin-bottom:6px">Identity & Responsibilities</div>
-            <div style="font-size:0.8rem;color:var(--text2);background:var(--bg2);border-radius:7px;padding:10px;line-height:1.6;font-family:monospace;max-height:200px;overflow-y:auto">${escHtml(agent.soul_excerpt||"(No IDENTITY.md found)")}</div>
-            <div style="display:flex;gap:8px;margin-top:10px">
-                <input class="form-input" id="chat-input-${agent.id}" placeholder="Quick message to ${agent.name}…" style="font-size:0.82rem">
-                <button class="btn btn-ghost" id="chat-send-${agent.id}" style="padding:0 12px">→</button>
+            <div style="font-size:0.8rem;color:var(--text2);background:var(--bg2);border-radius:7px;padding:10px;line-height:1.6;font-family:monospace;max-height:120px;overflow-y:auto">${escHtml(agent.soul_excerpt||"(No IDENTITY.md found)")}</div>
+            <div style="margin-top:12px;padding:10px;background:var(--bg2);border-radius:7px;border:1px solid var(--border1);font-size:0.78rem;color:var(--text3);text-align:center">
+                💬 Use the floating chat widget (bottom-right) to message ${escHtml(agent.name)}
             </div>
-            <div id="chat-reply-${agent.id}" style="margin-top:6px;font-size:0.78rem;color:var(--text3)"></div>
+        </div>
+
+        <div class="agent-tab-pane" data-pane="tasks">
+            <div id="agent-tasks-${agent.id}" style="font-size:0.78rem">
+                <div style="color:var(--text3);padding:6px 0">Click to load tasks…</div>
+            </div>
         </div>
 
         <div class="agent-tab-pane" data-pane="soul">
@@ -875,6 +1080,44 @@ function wireAgentDetail(agentId, panel) {
         });
     });
 
+    // Tasks tab — load on first click
+    const tasksTabBtn = panel.querySelector(`[data-tab="tasks"]`);
+    const tasksEl     = panel.querySelector(`#agent-tasks-${agentId}`);
+    if (tasksTabBtn && tasksEl) {
+        tasksTabBtn.addEventListener("click", async () => {
+            if (tasksEl.dataset.loaded) return;
+            tasksEl.innerHTML = `<div style="color:var(--text3)">Loading…</div>`;
+            try {
+                const t = await fetchData(`agents/${agentId}/tasks`);
+                tasksEl.dataset.loaded = "1";
+                const taskRow = (task) => {
+                    const sc = task.status === "in_progress" ? "var(--blue2)"
+                             : task.status === "done"        ? "var(--green)"
+                             : "var(--text3)";
+                    const sl = task.status === "in_progress" ? "▶ Active"
+                             : task.status === "done"        ? "✓ Done" : "● Queue";
+                    return `<div style="padding:5px 0;border-bottom:1px solid var(--border1);display:flex;gap:8px;align-items:flex-start">
+                        <span style="font-size:0.65rem;padding:2px 6px;border-radius:4px;white-space:nowrap;background:${sc}22;color:${sc}">${sl}</span>
+                        <span style="color:var(--text2)">${escHtml(task.title)}</span>
+                    </div>`;
+                };
+                const sec = (label, items) => items?.length
+                    ? `<div class="agent-detail-label" style="margin:8px 0 4px">${label}</div>${items.map(taskRow).join("")}`
+                    : "";
+                const html = [
+                    t.current  ? `<div class="agent-detail-label" style="margin:0 0 4px">Current</div>${taskRow(t.current)}` : "",
+                    sec(`Queue (${t.pending?.length})`, t.pending),
+                    sec("Recently completed", t.completed),
+                    (!t.current && !t.pending?.length && !t.completed?.length)
+                        ? `<div style="color:var(--text3);padding:6px 0">No tasks assigned</div>` : "",
+                ].join("");
+                tasksEl.innerHTML = html || `<div style="color:var(--text3);padding:6px 0">No tasks assigned</div>`;
+            } catch(e) {
+                tasksEl.innerHTML = `<div style="color:var(--red)">${e.message}</div>`;
+            }
+        }, { once: true });
+    }
+
     // Soul save (cosmetic — shows success)
     const soulSave = panel.querySelector(`#soul-save-${agentId}`);
     if (soulSave) {
@@ -898,36 +1141,6 @@ function wireAgentDetail(agentId, panel) {
         };
     }
 
-    // Quick chat — calls /api/agents/<id>/chat → openclaw agent CLI
-    const chatSend = panel.querySelector(`#chat-send-${agentId}`);
-    const chatInp  = panel.querySelector(`#chat-input-${agentId}`);
-    const chatRep  = panel.querySelector(`#chat-reply-${agentId}`);
-
-    const doChat = async () => {
-        const msg = chatInp?.value.trim();
-        if (!msg || !chatRep) return;
-        chatInp.value = "";
-        chatInp.disabled = true;
-        chatSend.disabled = true;
-        chatRep.style.color = "var(--text3)";
-        chatRep.textContent = "⏳ Thinking…";
-        try {
-            const d = await apiPost(`agents/${agentId}/chat`, { message: msg });
-            chatRep.style.color = "var(--text2)";
-            chatRep.innerHTML = `<strong style="color:var(--blue2)">${agentId}:</strong> ${escHtml(d.reply)}`
-                + (d.model ? `<span style="color:var(--text3);font-size:0.7rem;margin-left:6px">[${d.model}]</span>` : "");
-        } catch(e) {
-            chatRep.style.color = "var(--red)";
-            chatRep.textContent = `⚠️ ${e.message}`;
-        } finally {
-            chatInp.disabled = false;
-            chatSend.disabled = false;
-            chatInp.focus();
-        }
-    };
-
-    if (chatSend) chatSend.onclick = doChat;
-    if (chatInp)  chatInp.addEventListener("keydown", e => { if (e.key === "Enter") doChat(); });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1435,7 +1648,7 @@ function renderOffice(d) {
             <div class="panel-subtitle">Pixel art · live agents · click to interact</div>
         </div>
         <div class="office-canvas-wrap">
-            <canvas id="office-canvas" class="office-canvas" width="640" height="420"></canvas>
+            <canvas id="office-canvas" class="office-canvas" width="640" height="480" style="width:100%;height:auto;max-height:580px"></canvas>
             <div class="office-sidebar">
                 <div class="office-agent-box" id="office-agent-info">
                     <div class="office-hint">Click an agent or object</div>
@@ -1456,7 +1669,7 @@ function initOfficePanel(data, container) {
     const canvas = container.querySelector("#office-canvas");
     if (!canvas) return;
 
-    const CW = 640, CH = 420;
+    const CW = 640, CH = 480;
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
 
@@ -1477,9 +1690,12 @@ function initOfficePanel(data, container) {
             { x: 358, y: 232, agent: "eva"     },
             { x: 492, y: 232, agent: "alex"    },
         ],
-        coffee:  { x: 545, y: 165, w: 54, h: 72 },
+        coffee:  { x: 268, y: 350, w: 240, h: 90 },
         meeting: { x: 14,  y: 226, w: 160, h: 152 },
     };
+    // Coffee machine position inside the break room zone
+    const CM_X = ZONES.coffee.x + 88;   // x=356
+    const CM_Y = ZONES.coffee.y + 8;    // y=358
 
     const SCREEN_COLORS = {
         milfred:"#00ff88", ernst:"#ff4444", gordon:"#ffaa00",
@@ -1499,27 +1715,100 @@ function initOfficePanel(data, container) {
 
     // ── Agent state ───────────────────────────────────────────────
     const DEFS = [
-        { id:"milfred", name:"Milfred", role:"Tech Lead",     shirtC:"#16a34a", hairC:"#222",    skinC:"#c68642", hx:ZONES.upperDesks[0].x+38, hy:HY_UP  },
-        { id:"ernst",   name:"Ernst",   role:"Security",      shirtC:"#dc2626", hairC:"#111",    skinC:"#f1c27d", hx:ZONES.upperDesks[1].x+38, hy:HY_UP  },
-        { id:"gordon",  name:"Gordon",  role:"Trading",       shirtC:"#d97706", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.upperDesks[2].x+38, hy:HY_UP  },
-        { id:"lara",    name:"Lara",    role:"Growth",        shirtC:"#db2777", hairC:"#fde047", skinC:"#f1c27d", hx:ZONES.upperDesks[3].x+38, hy:HY_UP  },
-        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#0891b2", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+38, hy:HY_LOW },
-        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+38, hy:HY_LOW },
-        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#111",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+38, hy:HY_LOW },
+        { id:"milfred", name:"Milfred", role:"Tech Lead",     shirtC:"#1e40af", hairC:"#222",    skinC:"#c68642", hx:ZONES.upperDesks[0].x+38, hy:HY_UP,  speed:1.15 },
+        { id:"ernst",   name:"Ernst",   role:"Security",      shirtC:"#374151", hairC:"#111",    skinC:"#f1c27d", hx:ZONES.upperDesks[1].x+38, hy:HY_UP,  speed:0.95 },
+        { id:"gordon",  name:"Gordon",  role:"Trading",       shirtC:"#059669", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.upperDesks[2].x+38, hy:HY_UP,  speed:1.05 },
+        { id:"lara",    name:"Lara",    role:"Growth",        shirtC:"#ca8a04", hairC:"#fde047", skinC:"#f1c27d", hx:ZONES.upperDesks[3].x+38, hy:HY_UP,  speed:1.10, female:true },
+        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+38, hy:HY_LOW, speed:1.20 },
+        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+38, hy:HY_LOW, speed:1.00, female:true },
+        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+38, hy:HY_LOW, speed:0.90 },
     ];
-    const agents = DEFS.map(d => ({
-        ...d, x: d.hx, y: d.hy, tx: d.hx, ty: d.hy,
-        state: "typing", frame: Math.floor(Math.random() * 120),
-        timer: Math.random() * 3000 + 1500, moving: false, _ns: "typing",
-    }));
+    // Build status map from API data (keyed by agent id, lowercase)
+    const statusMap = {};
+    (data.desks || []).forEach(desk => {
+        statusMap[desk.agent.toLowerCase()] = (desk.status || "busy").toLowerCase();
+    });
+
+    // Coffee home slots — staggered so multiple idle agents don't stack
+    const COFFEE_SLOTS = [
+        { x: CM_X - 68, y: CM_Y + 44 },   // far left of machine
+        { x: CM_X - 46, y: CM_Y + 44 },   // left
+        { x: CM_X - 24, y: CM_Y + 44 },   // center-left
+        { x: CM_X + 58, y: CM_Y + 44 },   // right side
+    ];
+    let _idleSlot = 0;
+
+    const agents = DEFS.map(d => {
+        const apiStatus = statusMap[d.id] || "busy";
+        const isIdle    = apiStatus === "idle";
+        const isOffline = apiStatus === "offline";
+        let hx = d.hx, hy = d.hy, initState = "typing";
+        if (isIdle) {
+            const slot = COFFEE_SLOTS[_idleSlot % COFFEE_SLOTS.length];
+            _idleSlot++;
+            hx = slot.x; hy = slot.y; initState = "coffee";
+        }
+        return {
+            ...d, hx, hy, x: hx, y: hy, tx: hx, ty: hy,
+            state: initState, frame: Math.floor(Math.random() * 120),
+            timer: Math.random() * 3000 + 1500, moving: false, _ns: initState,
+            apiStatus, hidden: isOffline,
+            bubble: null,   // { text, type, life } — speech bubble
+        };
+    });
+
+    // ── Meeting state ─────────────────────────────────────────────
+    let _activeMeeting  = false;
+    let _meetingCooldown = 0;   // frames to wait before next meeting
+    const MEETING_TOPICS = [
+        "Sprint sync 📋", "Security review 🛡️", "Trading strategy 📈",
+        "Content calendar 🎨", "Release planning 🚀", "Quick standup ☀️",
+    ];
+    const MEETING_SEATS = [
+        { x: ZONES.meeting.x + 22,  y: ZONES.meeting.y + 44  },
+        { x: ZONES.meeting.x + 60,  y: ZONES.meeting.y + 95  },
+        { x: ZONES.meeting.x + 105, y: ZONES.meeting.y + 44  },
+        { x: ZONES.meeting.x + 120, y: ZONES.meeting.y + 95  },
+    ];
+
+    function _triggerMeeting() {
+        if (_activeMeeting) return;
+        const eligible = agents.filter(a => !a.hidden && a.apiStatus !== "idle" && !a.moving && a.state !== "meeting");
+        if (eligible.length < 2) return;
+        const count = Math.min(eligible.length, Math.random() < 0.35 ? 3 : 2);
+        const picked = eligible.sort(() => Math.random() - 0.5).slice(0, count);
+        const topic  = MEETING_TOPICS[Math.floor(Math.random() * MEETING_TOPICS.length)];
+        picked.forEach((a, i) => {
+            a._prevHx = a.hx; a._prevHy = a.hy;
+            const seat = MEETING_SEATS[i % MEETING_SEATS.length];
+            a.tx = seat.x + (Math.random() - 0.5) * 10;
+            a.ty = seat.y + (Math.random() - 0.5) * 10;
+            a.moving = true; a.state = "walking"; a._ns = "meeting";
+            a.inMeeting = true; a.meetingTopic = topic;
+        });
+        _activeMeeting = true;
+        const dur = Math.random() * 25000 + 30000;  // 30–55 s
+        setTimeout(() => {
+            picked.forEach(a => {
+                if (!a.inMeeting) return;
+                a.tx = a._prevHx || a.hx; a.ty = a._prevHy || a.hy;
+                a.moving = true; a.state = "walking";
+                a._ns = a.apiStatus === "idle" ? "coffee" : "typing";
+                a.inMeeting = false; a.meetingTopic = null;
+            });
+            _activeMeeting = false;
+            _meetingCooldown = 360;  // ~6 s cooldown after meeting ends
+        }, dur);
+        addAct(picked[0].name, `📅 Meeting: ${topic}`);
+    }
 
     // ── Particles ─────────────────────────────────────────────────
     const particles = [];
     let steamTick = 0;
     function spawnSteam() {
         for (let i = 0; i < 2; i++) particles.push({
-            x: ZONES.coffee.x + 18 + (Math.random() - 0.5) * 8,
-            y: ZONES.coffee.y - 2,
+            x: CM_X + 18 + (Math.random() - 0.5) * 8,
+            y: CM_Y - 2,
             vx: (Math.random() - 0.5) * 0.35, vy: -(Math.random() * 0.55 + 0.35),
             life: 1, decay: Math.random() * 0.013 + 0.007, r: Math.random() * 3 + 1.5,
         });
@@ -1534,6 +1823,15 @@ function initOfficePanel(data, container) {
         if (feed) feed.innerHTML = actLog.slice(0, 10).map(f =>
             `<div class="office-feed-row"><span class="feed-agent">${f.agent}</span><span class="feed-action">${escHtml(f.action)}</span></div>`
         ).join("");
+        // Trigger speech bubble on the agent
+        const a = agents.find(ag => ag.name === agentName);
+        if (a) {
+            const type = /✓|complete|done/i.test(action) ? "complete"
+                       : /⚠|alert|error|fail/i.test(action) ? "alert"
+                       : /☕|coffee|break/i.test(action)    ? "idle"
+                       : "status";
+            a.bubble = { text: action, type, life: 5000 };
+        }
     }
 
     // ── Drawing helpers ───────────────────────────────────────────
@@ -1550,6 +1848,57 @@ function initOfficePanel(data, container) {
         for (let gy = 58; gy < CH; gy += 40) {
             ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CW, gy); ctx.stroke();
         }
+        // Break room — warm tile tint
+        const br = ZONES.coffee;
+        ctx.fillStyle = "rgba(217,119,6,0.07)"; ctx.fillRect(br.x, br.y, br.w, br.h);
+        // Meeting room — purple carpet with fine cross-hatch
+        const mr = ZONES.meeting;
+        ctx.fillStyle = "rgba(124,58,237,0.08)"; ctx.fillRect(mr.x, mr.y, mr.w, mr.h);
+        ctx.strokeStyle = "rgba(167,139,250,0.06)"; ctx.lineWidth = 1;
+        for (let cx = mr.x; cx < mr.x + mr.w; cx += 8) {
+            ctx.beginPath(); ctx.moveTo(cx, mr.y); ctx.lineTo(cx, mr.y + mr.h); ctx.stroke();
+        }
+        for (let cy = mr.y; cy < mr.y + mr.h; cy += 8) {
+            ctx.beginPath(); ctx.moveTo(mr.x, cy); ctx.lineTo(mr.x + mr.w, cy); ctx.stroke();
+        }
+    }
+
+    function drawClock() {
+        const cx = 307, cy = 26, r = 16;
+        // Face
+        ctx.fillStyle = "#f5f0e8";
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+        ctx.strokeStyle = "#5a4a30"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.stroke();
+        // Hour tick marks
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 12; i++) {
+            const a = (i / 12) * Math.PI * 2 - Math.PI / 2;
+            const inner = i % 3 === 0 ? r - 5 : r - 3;
+            ctx.strokeStyle = "#333";
+            ctx.beginPath();
+            ctx.moveTo(cx + Math.cos(a) * inner, cy + Math.sin(a) * inner);
+            ctx.lineTo(cx + Math.cos(a) * (r - 1), cy + Math.sin(a) * (r - 1));
+            ctx.stroke();
+        }
+        const now = new Date();
+        const hAngle = ((now.getHours() % 12) + now.getMinutes() / 60) / 12 * Math.PI * 2 - Math.PI / 2;
+        const mAngle = (now.getMinutes() / 60) * Math.PI * 2 - Math.PI / 2;
+        const sAngle = (now.getSeconds() / 60) * Math.PI * 2 - Math.PI / 2;
+        // Hour hand
+        ctx.strokeStyle = "#222"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(hAngle) * (r - 7), cy + Math.sin(hAngle) * (r - 7)); ctx.stroke();
+        // Minute hand
+        ctx.strokeStyle = "#444"; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(mAngle) * (r - 4), cy + Math.sin(mAngle) * (r - 4)); ctx.stroke();
+        // Second hand
+        ctx.strokeStyle = "#e53e3e"; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(sAngle) * (r - 3), cy + Math.sin(sAngle) * (r - 3)); ctx.stroke();
+        // Center dot
+        ctx.fillStyle = "#222"; ctx.beginPath(); ctx.arc(cx, cy, 2, 0, Math.PI*2); ctx.fill();
     }
 
     function drawWall() {
@@ -1571,6 +1920,7 @@ function initOfficePanel(data, container) {
             ctx.beginPath(); ctx.moveTo(wx+44,3); ctx.lineTo(wx+44,49); ctx.stroke();
             ctx.beginPath(); ctx.moveTo(wx,26);   ctx.lineTo(wx+88,26); ctx.stroke();
         });
+        drawClock();
     }
 
     function drawDesk(x, y, agentId) {
@@ -1604,6 +1954,18 @@ function initOfficePanel(data, container) {
         px(x, y+MH+DSH, DW, DFH, "#3a2a1c");
         px(x+4, y+MH+DSH, 6, DFH+2, "#2a1e12");
         px(x+DW-10, y+MH+DSH, 6, DFH+2, "#2a1e12");
+    }
+
+    function drawCoffeeRoom(x, y) {
+        const { w, h } = ZONES.coffee;
+        px(x, y, w, h, "#1c1628");
+        ctx.strokeStyle = "#d97706"; ctx.lineWidth = 2;
+        ctx.setLineDash([5, 4]); ctx.strokeRect(x+1, y+1, w-2, h-2); ctx.setLineDash([]);
+        ctx.fillStyle = "#f59e0b"; ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
+        ctx.fillText("BREAK ROOM  ☕", x + w/2, y + 14);
+        // Small counter surface left of machine
+        px(x + 6, y + 55, 72, 18, "#4a3728");
+        px(x + 8, y + 57, 68, 14, "#523e2d");
     }
 
     function drawCoffeeMachine(x, y) {
@@ -1650,11 +2012,13 @@ function initOfficePanel(data, container) {
             px(x+cx, y+17, 18, 8, "#3a2d20");  px(x+cx+2, y+19, 14, 5, "#4a3a28");
             px(x+cx, y+96, 18, 8, "#3a2d20");  px(x+cx+2, y+97, 14, 5, "#4a3a28");
         });
-        ctx.fillStyle = "#10b981"; ctx.font = "7px monospace"; ctx.textAlign = "center";
-        ctx.fillText("● available", x+80, y+120);
+        ctx.fillStyle = _activeMeeting ? "#ef4444" : "#10b981";
+        ctx.font = "7px monospace"; ctx.textAlign = "center";
+        ctx.fillText(_activeMeeting ? "● in session" : "● available", x+80, y+120);
     }
 
     function drawAgent(a) {
+        if (a.hidden) return;
         const ax = Math.round(a.x), ay = Math.round(a.y);
         const wf = Math.floor(a.frame / 6) % 4;
         const lL = a.moving ? (wf===1 ?  3 : wf===3 ? -3 : 0) : 0;
@@ -1672,19 +2036,53 @@ function initOfficePanel(data, container) {
         px(ax+1, ay+9, 14, 9, a.shirtC);
         px(ax+3, ay+11, 4, 3, a.shirtC + "88");
 
-        // Arms (animated when typing)
+        // Arms — state-dependent
         const ta = a.state === "typing" ? (Math.floor(a.frame/5) % 2) * 2 : 0;
-        px(ax-2, ay+10+ta, 4, 7, a.shirtC);
-        px(ax+14, ay+10+ta, 4, 7, a.shirtC);
+        if (a.state === "thinking") {
+            px(ax-2, ay+10, 4, 7, a.shirtC);          // left arm down
+            px(ax+14, ay+8, 4, 5, a.shirtC);           // right arm raised
+            px(ax+14, ay+13, 4, 2, a.skinC);           // hand at chin
+        } else if (a.state === "reading") {
+            px(ax-3, ay+10, 4, 5, a.shirtC);
+            px(ax+15, ay+10, 4, 5, a.shirtC);
+            px(ax+1, ay+14, 14, 9, "#1a1a2e");         // tablet
+            px(ax+2, ay+15, 12, 7, "#00aaff22");       // screen glow
+        } else if (a.state === "waiting") {
+            px(ax-2, ay+10, 5, 5, a.shirtC);
+            px(ax+13, ay+10, 5, 5, a.shirtC);
+            px(ax+1, ay+14, 14, 3, a.shirtC);          // crossed arms bar
+        } else {
+            px(ax-2, ay+10+ta, 4, 7, a.shirtC);
+            px(ax+14, ay+10+ta, 4, 7, a.shirtC);
+        }
 
         // Head + hair
         px(ax+2, ay, 12, 11, a.skinC);
         px(ax+2, ay, 12, 3, a.hairC);
         px(ax+1, ay+1, 2, 5, a.hairC);
         px(ax+13, ay+1, 2, 5, a.hairC);
+        if (a.female) {
+            // Longer side hair flowing down
+            px(ax+1, ay+1, 2, 9, a.hairC);
+            px(ax+13, ay+1, 2, 9, a.hairC);
+            px(ax+2, ay-1, 12, 2, a.hairC);            // extra top width
+        }
 
         // Eyes
         px(ax+4, ay+4, 2, 2, "#111"); px(ax+10, ay+4, 2, 2, "#111");
+        if (a.female) {
+            // Eyelash marks
+            px(ax+4, ay+3, 1, 1, "#111"); px(ax+5, ay+2, 1, 1, "#111");
+            px(ax+10, ay+3, 1, 1, "#111"); px(ax+11, ay+2, 1, 1, "#111");
+        }
+
+        // Thinking dots above head
+        if (a.state === "thinking") {
+            const tf = Math.floor(a.frame / 20) % 3;
+            ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
+            ctx.fillStyle = "#f9a8d4";
+            ctx.fillText([".", "..", "..."][tf], ax+8, ay-16);
+        }
 
         // Mouth: happy if coffee/idle, neutral if working
         if (a.state === "coffee" || a.state === "idle") {
@@ -1699,21 +2097,73 @@ function initOfficePanel(data, container) {
         px(ax+8-Math.round(tw/2)-2, ay-14, Math.round(tw)+4, 11, "rgba(0,0,0,0.65)");
         ctx.fillStyle = "#fff"; ctx.fillText(a.name, ax+8, ay-5);
 
+        // General speech bubble (a.bubble — status/alert/complete/idle)
+        if (a.bubble) {
+            const BUBBLE_COLORS = { status:"#e0f2fe", alert:"#fef3c7", complete:"#d1fae5", idle:"#f3e8ff" };
+            const bc = BUBBLE_COLORS[a.bubble.type] || "#f0f0f0";
+            ctx.font = "6px monospace"; ctx.textAlign = "left";
+            const btext = a.bubble.text.slice(0, 18);
+            const bw = Math.min(ctx.measureText(btext).width + 8, 90);
+            const bx = ax + 14, by = ay - 26;
+            ctx.fillStyle = bc; ctx.fillRect(bx, by, bw, 14);
+            ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 14);
+            // Tail
+            ctx.fillStyle = bc;
+            ctx.beginPath(); ctx.moveTo(bx+4, by+14); ctx.lineTo(bx+8, by+14); ctx.lineTo(bx+4, by+19); ctx.fill();
+            ctx.fillStyle = "#111"; ctx.fillText(btext, bx+4, by+9);
+        }
+
+        // Meeting speech bubble
+        if (a.inMeeting && a.state === "meeting") {
+            const topic = a.meetingTopic || "…";
+            ctx.font = "6px monospace"; ctx.textAlign = "left";
+            const bw = Math.min(ctx.measureText(topic).width + 8, 80);
+            const bx = ax + 14, by = a.bubble ? ay - 46 : ay - 26;
+            px(bx, by, bw, 14, "rgba(255,255,255,0.92)");
+            px(bx + 6, by + 14, 6, 5, "rgba(255,255,255,0.92)");
+            ctx.fillStyle = "#111"; ctx.fillText(topic.slice(0, 16), bx + 4, by + 9);
+        }
+
+        // Coffee cup for idle agents
+        if (a.state === "coffee" || a.apiStatus === "idle") {
+            px(ax+16, ay+10, 7, 6, "#fff8f0");
+            px(ax+17, ay+11, 5, 4, "#3d1408");
+            px(ax+23, ay+12, 2, 3, "#fff8f0");
+        }
+
         // Status dot
-        const dc = {typing:"#16a34a", walking:"#3b82f6", idle:"#d97706", coffee:"#f59e0b"};
-        ctx.fillStyle = dc[a.state] || "#666";
+        const dotC = {busy:"#16a34a", active:"#16a34a", idle:"#f59e0b", offline:"#555"};
+        ctx.fillStyle = dotC[a.apiStatus] || (a.moving ? "#3b82f6" : "#16a34a");
         ctx.beginPath(); ctx.arc(ax+15, ay+1, 3, 0, Math.PI*2); ctx.fill();
     }
 
-    function drawNightOverlay() {
+    function drawTimeOverlay() {
         const h = new Date().getHours();
-        if (h >= 6 && h < 18) return;
-        ctx.fillStyle = "rgba(5,3,20,0.36)"; ctx.fillRect(0, 58, CW, CH-58);
-        [...ZONES.upperDesks, ...ZONES.lowerDesks].forEach(d => {
-            const g = ctx.createRadialGradient(d.x+46, d.y+70, 0, d.x+46, d.y+70, 72);
-            g.addColorStop(0, "rgba(255,200,80,0.13)"); g.addColorStop(1, "rgba(255,200,80,0)");
-            ctx.fillStyle = g; ctx.fillRect(d.x-12, d.y+15, DW+24, 100);
-        });
+        let overlay = null;
+        if (h < 6 || h >= 22) {
+            // Night — deep blue-dark + desk lamp glows
+            overlay = "rgba(5,3,20,0.36)";
+            [...ZONES.upperDesks, ...ZONES.lowerDesks].forEach(d => {
+                const g = ctx.createRadialGradient(d.x+46, d.y+70, 0, d.x+46, d.y+70, 72);
+                g.addColorStop(0, "rgba(255,200,80,0.13)"); g.addColorStop(1, "rgba(255,200,80,0)");
+                ctx.fillStyle = g; ctx.fillRect(d.x-12, d.y+15, DW+24, 100);
+            });
+        } else if (h < 9) {
+            // Morning — warm sunrise amber tint
+            overlay = "rgba(251,146,60,0.09)";
+        } else if (h < 18) {
+            // Day — clear, no overlay
+            return;
+        } else if (h < 22) {
+            // Evening — amber/orange sunset + soft desk glows
+            overlay = "rgba(180,60,10,0.15)";
+            [...ZONES.upperDesks, ...ZONES.lowerDesks].forEach(d => {
+                const g = ctx.createRadialGradient(d.x+46, d.y+70, 0, d.x+46, d.y+70, 72);
+                g.addColorStop(0, "rgba(255,200,80,0.07)"); g.addColorStop(1, "rgba(255,200,80,0)");
+                ctx.fillStyle = g; ctx.fillRect(d.x-12, d.y+15, DW+24, 100);
+            });
+        }
+        if (overlay) { ctx.fillStyle = overlay; ctx.fillRect(0, 58, CW, CH-58); }
     }
 
     // ── Update ────────────────────────────────────────────────────
@@ -1728,6 +2178,8 @@ function initOfficePanel(data, container) {
         agents.forEach(a => {
             a.frame++;
             a.timer -= dt;
+            // Bubble auto-dismiss
+            if (a.bubble) { a.bubble.life -= dt; if (a.bubble.life <= 0) a.bubble = null; }
             if (a.moving) {
                 const dx = a.tx - a.x, dy = a.ty - a.y;
                 const d = Math.sqrt(dx*dx + dy*dy);
@@ -1739,32 +2191,60 @@ function initOfficePanel(data, container) {
                 }
             } else if (a.timer <= 0) {
                 const r = Math.random();
-                if (r < 0.12) {
-                    // Go to coffee
-                    a.tx = ZONES.coffee.x + 4 + Math.random()*16;
-                    a.ty = ZONES.coffee.y + ZONES.coffee.h + 3;
-                    a.moving = true; a.state = "walking"; a._ns = "coffee";
-                    a.timer = Math.random()*4000 + 2000;
-                    addAct(a.name, ["Getting coffee ☕","Coffee break ☕","At coffee machine"][Math.floor(Math.random()*3)]);
-                } else if (r < 0.24) {
-                    // Return home
-                    a.tx = a.hx; a.ty = a.hy;
-                    a.moving = true; a.state = "walking"; a._ns = "typing";
-                    a.timer = Math.random()*8000 + 5000;
-                    const acts = AGENT_ACTS[a.id] || ["Working"];
-                    addAct(a.name, acts[Math.floor(Math.random()*acts.length)]);
-                } else if (r < 0.32) {
-                    // Small wander
-                    a.tx = Math.max(22, Math.min(CW-30, a.hx + (Math.random()-0.5)*44));
-                    a.ty = Math.max(65, Math.min(CH-38, a.hy + (Math.random()-0.5)*28));
-                    a.moving = true; a.state = "walking"; a._ns = "idle";
-                    a.timer = Math.random()*3000 + 1500;
+                const isIdleAgent = a.apiStatus === "idle";
+                if (isIdleAgent) {
+                    // Idle agents stay near coffee — occasional small wander or sip
+                    if (r < 0.25) {
+                        // Drift slightly within the break room zone
+                        a.tx = Math.max(ZONES.coffee.x + 8, Math.min(ZONES.coffee.x + ZONES.coffee.w - 30, a.hx + (Math.random()-0.5)*28));
+                        a.ty = Math.max(ZONES.coffee.y + 22, Math.min(ZONES.coffee.y + ZONES.coffee.h - 24, a.hy + (Math.random()-0.5)*20));
+                        a.moving = true; a.state = "walking"; a._ns = "coffee";
+                        a.timer = Math.random()*3000 + 1500;
+                    } else if (r < 0.35) {
+                        // Return to coffee home slot
+                        a.tx = a.hx; a.ty = a.hy;
+                        a.moving = true; a.state = "walking"; a._ns = "coffee";
+                        a.timer = Math.random()*4000 + 2000;
+                    } else {
+                        a.state = "coffee";
+                        a.timer = Math.random()*5000 + 3000;
+                    }
                 } else {
-                    a.state = r < 0.8 ? "typing" : "idle";
-                    a.timer = Math.random()*5000 + 3000;
+                    if (r < 0.10) {
+                        // Go to break room coffee
+                        a.tx = CM_X - 62 + Math.random() * 44;
+                        a.ty = CM_Y + 38 + Math.random() * 14;
+                        a.moving = true; a.state = "walking"; a._ns = "coffee";
+                        a.timer = Math.random()*4000 + 2000;
+                        addAct(a.name, ["Getting coffee ☕","Coffee break ☕","At coffee machine"][Math.floor(Math.random()*3)]);
+                    } else if (r < 0.22) {
+                        // Return home (desk)
+                        a.tx = a.hx; a.ty = a.hy;
+                        a.moving = true; a.state = "walking"; a._ns = "typing";
+                        a.timer = Math.random()*8000 + 5000;
+                        const acts = AGENT_ACTS[a.id] || ["Working"];
+                        addAct(a.name, acts[Math.floor(Math.random()*acts.length)]);
+                    } else if (r < 0.30) {
+                        // Small wander near desk
+                        a.tx = Math.max(22, Math.min(CW-30, a.hx + (Math.random()-0.5)*44));
+                        a.ty = Math.max(65, Math.min(CH-38, a.hy + (Math.random()-0.5)*28));
+                        a.moving = true; a.state = "walking"; a._ns = "idle";
+                        a.timer = Math.random()*3000 + 1500;
+                    } else {
+                        const stateRoll = Math.random();
+                    if (stateRoll < 0.50)      a.state = "typing";
+                    else if (stateRoll < 0.65) a.state = "thinking";
+                    else if (stateRoll < 0.78) a.state = "reading";
+                    else if (stateRoll < 0.88) a.state = "waiting";
+                    else                       a.state = "idle";
+                        a.timer = Math.random()*5000 + 3000;
+                    }
                 }
             }
         });
+        // Meeting trigger — ~1 meeting per 3 min on average (0.00025/frame @ ~60fps)
+        if (_meetingCooldown > 0) _meetingCooldown--;
+        else if (!_activeMeeting && Math.random() < 0.00025) _triggerMeeting();
     }
 
     // ── Render ────────────────────────────────────────────────────
@@ -1774,15 +2254,16 @@ function initOfficePanel(data, container) {
         drawFloor();
         drawWall();
         drawMeetingRoom(ZONES.meeting.x, ZONES.meeting.y);
+        drawCoffeeRoom(ZONES.coffee.x, ZONES.coffee.y);
         ZONES.upperDesks.forEach(d => drawDesk(d.x, d.y, d.agent));
         ZONES.lowerDesks.forEach(d => drawDesk(d.x, d.y, d.agent));
-        drawCoffeeMachine(ZONES.coffee.x, ZONES.coffee.y);
+        drawCoffeeMachine(CM_X, CM_Y);
         // Steam
         particles.forEach(p => {
             ctx.fillStyle = `rgba(210,190,175,${(p.life*0.5).toFixed(2)})`;
             ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(p.r), Math.round(p.r));
         });
-        drawNightOverlay();
+        drawTimeOverlay();
         [...agents].sort((a,b) => a.y-b.y).forEach(drawAgent);
         // Scanlines
         ctx.fillStyle = "rgba(0,0,0,0.05)";
@@ -1829,7 +2310,8 @@ function initOfficePanel(data, container) {
     }
 
     function showAgentInfo(a) {
-        const sl = {typing:"🟢 Typing",walking:"🔵 Walking",idle:"🟡 Idle",coffee:"☕ Coffee"};
+        const sl = {typing:"🟢 Working",walking:"🔵 Moving",idle:"🟡 Idle",coffee:"☕ Coffee break",offline:"⚫ Offline"};
+        const statusLabel = {busy:"🟢 Busy",active:"🟢 Active",idle:"🟡 Idle",offline:"⚫ Offline"}[a.apiStatus] || "";
         const acts = AGENT_ACTS[a.id] || [];
         const cur  = acts[Math.floor(Math.random()*acts.length)] || "Working";
         setInfo(`
@@ -1842,7 +2324,7 @@ function initOfficePanel(data, container) {
                     <div style="font-size:0.72rem;color:var(--text3)">${a.role}</div>
                 </div>
             </div>
-            <div style="font-size:0.78rem;color:var(--text2);margin-bottom:4px">${sl[a.state]||a.state}</div>
+            <div style="font-size:0.78rem;color:var(--text2);margin-bottom:4px">${statusLabel || sl[a.state] || a.state}</div>
             <div style="font-size:0.74rem;color:var(--text3);font-style:italic">"${escHtml(cur)}"</div>
             <button class="btn btn-ghost" style="margin-top:8px;width:100%;font-size:0.72rem"
                 onclick="document.getElementById('office-agent-info').innerHTML='<div class=office-hint>Click an agent or object</div>'">✕ Close</button>`);
@@ -2527,6 +3009,265 @@ async function checkHealth() {
 // ──────────────────────────────────────────────────────────────────────────────
 // Init
 // ──────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// Floating Quick-Chat Widget
+// ──────────────────────────────────────────────────────────────────────────────
+const FLOAT_AGENTS = [
+    { id: "eva",     name: "Eva",    emoji: "📅" },
+    { id: "claude",  name: "Claude", emoji: "🧠" },
+    { id: "milfred", name: "Milfred",emoji: "🤖" },
+    { id: "ernst",   name: "Ernst",  emoji: "🔒" },
+    { id: "gordon",  name: "Gordon", emoji: "📈" },
+    { id: "lara",    name: "Lara",   emoji: "📱" },
+    { id: "alex",    name: "Alex",   emoji: "👔" },
+];
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Floating Tasks Widget
+// ──────────────────────────────────────────────────────────────────────────────
+function initFloatingTasks() {
+    const saved = JSON.parse(localStorage.getItem("floatTasks") || "{}");
+    let collapsed = saved.collapsed !== false;
+    let filterAgent = saved.agent || "all";
+    let widgetW = saved.w || 310;
+    let bodyH   = saved.h || 280;
+
+    const widget = document.createElement("div");
+    widget.id = "float-tasks";
+
+    // Position: bottom-right, to the left of the chat widget
+    const posX = saved.x ?? (window.innerWidth  - 640);
+    const posY = saved.y ?? (window.innerHeight - 44 - 48);
+    widget.style.cssText = `
+        position:fixed;left:${posX}px;top:${posY}px;z-index:9998;
+        font-size:0.82rem;
+        background:var(--bg1,#141420);border:1px solid var(--border1,#2a2a40);
+        border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.6);
+        display:flex;flex-direction:column;overflow:hidden;
+        user-select:none;
+    `;
+    widget.style.width = widgetW + "px";
+    document.body.appendChild(widget);
+
+    function _persist() {
+        const rect = widget.getBoundingClientRect();
+        localStorage.setItem("floatTasks", JSON.stringify({ collapsed, agent: filterAgent, x: rect.left, y: rect.top, w: Math.round(widget.offsetWidth), h: bodyH }));
+    }
+
+    const resizer = enableResizeWidget(widget, () => widget.querySelector("#ftw-body"), (w, h) => { widgetW = w; bodyH = h; _persist(); });
+
+    async function _render() {
+        const agentOpts = `<option value="all"${filterAgent==="all"?" selected":""}>All Agents</option>`
+            + FLOAT_AGENTS.map(a => `<option value="${a.id}"${filterAgent===a.id?" selected":""}>${a.emoji} ${a.name}</option>`).join("");
+        widget.innerHTML = `
+            <div id="ftw-header" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;background:var(--bg2,#1a1a2e);border-bottom:1px solid var(--border1,#2a2a40)">
+                <span style="font-size:1rem">📋</span>
+                <span style="flex:1;font-size:0.8rem;font-weight:600;color:#fff">Tasks</span>
+                <select id="ftw-agent-sel" style="background:transparent;border:none;color:var(--text2,#aaa);font-size:0.72rem;cursor:pointer;max-width:100px" onclick="event.stopPropagation()">
+                    ${agentOpts}
+                </select>
+                <span id="ftw-toggle" style="color:var(--text3,#888);font-size:0.75rem;padding:2px 6px">${collapsed ? "▼" : "▲"}</span>
+            </div>
+            <div id="ftw-body" style="display:${collapsed ? "none" : "flex"};flex-direction:column;height:${bodyH}px;overflow-y:auto;padding:6px 8px">
+                <div style="color:var(--text3,#888);font-size:0.75rem;text-align:center;padding:12px 0" id="ftw-loading">Loading…</div>
+            </div>`;
+        resizer.reattach();
+
+        if (!collapsed) {
+            try {
+                const data = await fetchData("tasks");
+                const all = [...(data.todo || []), ...(data.in_progress || []), ...(data.done || [])];
+                const filtered = filterAgent === "all" ? all
+                    : all.filter(t => t.assignee?.toLowerCase() === filterAgent);
+                const body = widget.querySelector("#ftw-body");
+                if (!filtered.length) {
+                    body.innerHTML = `<div style="color:var(--text3,#888);font-size:0.75rem;text-align:center;padding:12px 0">No tasks</div>`;
+                } else {
+                    body.innerHTML = filtered.slice(0, 20).map(t => `
+                        <div style="padding:5px 2px;border-bottom:1px solid var(--border1,#2a2a40);display:flex;gap:8px;align-items:flex-start">
+                            <span style="font-size:0.7rem;min-width:14px;color:${_taskStatusColor(t.status)};margin-top:2px">${_taskStatusLabel(t.status)}</span>
+                            <div style="flex:1;min-width:0">
+                                <div style="color:var(--text1,#eee);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.title)}</div>
+                                <div style="font-size:0.68rem;color:var(--text3,#888)">${escHtml(t.assignee||"")}${t.tag ? ` · ${escHtml(t.tag)}` : ""}</div>
+                            </div>
+                        </div>`).join("");
+                }
+            } catch(e) {
+                widget.querySelector("#ftw-body").innerHTML = `<div style="color:var(--red,#f87171);font-size:0.75rem;padding:8px">${escHtml(e.message)}</div>`;
+            }
+        }
+
+        // Events
+        widget.querySelector("#ftw-header").addEventListener("click", () => {
+            collapsed = !collapsed; _persist(); _render();
+        });
+        widget.querySelector("#ftw-agent-sel").addEventListener("change", e => {
+            filterAgent = e.target.value; _persist(); _render();
+        });
+    }
+
+    enableDragWidget(widget, _persist, ["SELECT", "BUTTON"]);
+
+    // Refresh tasks every 30s when expanded
+    setInterval(() => { if (!collapsed) _render(); }, 30000);
+
+    _render();
+}
+
+function initFloatingChat() {
+    // Restore persisted state
+    const saved  = JSON.parse(localStorage.getItem("floatChat") || "{}");
+    let collapsed = saved.collapsed ?? false;   // default expanded
+    let selAgent  = saved.agent || "eva";
+    let widgetW   = saved.w || 300;
+    let bodyH     = saved.h || 320;
+    const msgs      = {};  // in-memory per-agent message buffer (capped at 50)
+    const msgsError = {};  // track agents where history fetch failed
+
+    const widget = document.createElement("div");
+    widget.id = "float-chat";
+    const posX = saved.x ?? (window.innerWidth  - 320);
+    const posY = saved.y ?? (window.innerHeight - 44 - 48);
+    widget.style.cssText = `
+        position:fixed;left:${posX}px;top:${posY}px;z-index:9999;
+        font-size:0.82rem;
+        background:var(--bg1,#141420);border:1px solid var(--border1,#2a2a40);
+        border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.6);
+        display:flex;flex-direction:column;overflow:hidden;
+        user-select:none;
+    `;
+    widget.style.width = widgetW + "px";
+    document.body.appendChild(widget);
+
+    function _persist() {
+        const rect = widget.getBoundingClientRect();
+        localStorage.setItem("floatChat", JSON.stringify({ collapsed, agent: selAgent, x: rect.left, y: rect.top, w: Math.round(widget.offsetWidth), h: bodyH }));
+    }
+
+    const resizer = enableResizeWidget(widget, () => widget.querySelector("#fch-body"), (w, h) => { widgetW = w; bodyH = h; _persist(); });
+
+    function _agentInfo(id) { return FLOAT_AGENTS.find(a => a.id === id) || { id, name: id, emoji: "🤖" }; }
+
+    function _render() {
+        const a = _agentInfo(selAgent);
+        const agentOpts = FLOAT_AGENTS.map(ag =>
+            `<option value="${ag.id}"${ag.id === selAgent ? " selected" : ""}>${ag.emoji} ${ag.name}</option>`
+        ).join("");
+
+        widget.innerHTML = `
+            <div id="fch-header" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;background:var(--bg2,#1a1a2e);border-bottom:1px solid var(--border1,#2a2a40)">
+                <span style="font-size:1.1rem">${a.emoji}</span>
+                <select id="fch-agent-sel" style="flex:1;background:transparent;border:none;color:#fff;font-size:0.8rem;cursor:pointer" onclick="event.stopPropagation()">
+                    ${agentOpts}
+                </select>
+                <span id="fch-toggle" style="color:var(--text3,#888);font-size:0.75rem;padding:2px 6px">${collapsed ? "▼" : "▲"}</span>
+            </div>
+            <div id="fch-body" style="display:${collapsed ? "none" : "flex"};flex-direction:column;height:${bodyH}px">
+                <div id="fch-messages" style="flex:1;overflow-y:auto;padding:8px;display:flex;flex-direction:column;gap:2px"></div>
+                <div style="padding:6px 8px;border-top:1px solid var(--border1,#2a2a40);display:flex;gap:6px;flex-shrink:0">
+                    <input id="fch-input" class="form-input" placeholder="Message ${a.name}…" style="font-size:0.78rem;flex:1">
+                    <button id="fch-send" class="btn btn-ghost" style="padding:0 10px">→</button>
+                </div>
+            </div>`;
+        resizer.reattach();
+
+        // Restore buffered messages for this agent
+        const msgEl = widget.querySelector("#fch-messages");
+        (msgs[selAgent] || []).forEach(m => {
+            msgEl.insertAdjacentHTML("beforeend", _chatBubble(m.role, m.text, m.ts));
+        });
+        if (!msgs[selAgent]?.length && !msgsError[selAgent]) {
+            // Load history from API (first open per agent)
+            fetchData(`agents/${selAgent}/chat/history`).then(d => {
+                if (!msgs[selAgent]) msgs[selAgent] = [];
+                (d.messages || []).forEach(m => {
+                    msgs[selAgent].push({ role: "user",  text: m.user_msg,    ts: m.created_at });
+                    msgs[selAgent].push({ role: "agent", text: m.agent_reply, ts: m.created_at });
+                    msgEl.insertAdjacentHTML("beforeend", _chatBubble("user",  m.user_msg,    m.created_at));
+                    msgEl.insertAdjacentHTML("beforeend", _chatBubble("agent", m.agent_reply, m.created_at));
+                });
+                msgEl.scrollTop = msgEl.scrollHeight;
+            }).catch(() => { msgsError[selAgent] = true; });
+        }
+        msgEl.scrollTop = msgEl.scrollHeight;
+
+        // Events
+        widget.querySelector("#fch-header").addEventListener("click", () => {
+            collapsed = !collapsed;
+            _persist();
+            _render();
+        });
+        widget.querySelector("#fch-agent-sel").addEventListener("change", e => {
+            selAgent = e.target.value;
+            _persist();
+            _render();
+        });
+
+        const inp  = widget.querySelector("#fch-input");
+        const send = widget.querySelector("#fch-send");
+        const doSend = async () => {
+            const msg = inp.value.trim();
+            if (!msg) return;
+            const now = new Date().toISOString();
+            inp.value = "";
+            inp.disabled = true;
+            send.disabled = true;
+            if (!msgs[selAgent]) msgs[selAgent] = [];
+            msgs[selAgent].push({ role: "user", text: msg, ts: now });
+            if (msgs[selAgent].length > 100) msgs[selAgent].splice(0, msgs[selAgent].length - 100);
+            msgEl.insertAdjacentHTML("beforeend", _chatBubble("user", msg, now));
+            // Thinking indicator
+            const label = _agentInfo(selAgent).name;
+            let dots = 0;
+            const dotEl = document.createElement("div");
+            dotEl.id = thinkId;
+            dotEl.style.cssText = "font-size:0.73rem;color:var(--text3,#888);padding:2px 4px;";
+            dotEl.textContent = `⏳ ${label} thinking…`;
+            msgEl.appendChild(dotEl);
+            msgEl.scrollTop = msgEl.scrollHeight;
+            const dotTimer = setInterval(() => {
+                dots = (dots + 1) % 4;
+                dotEl.textContent = `⏳ ${label} thinking${".".repeat(dots)}`;
+            }, 500);
+            try {
+                const res = await fetch(`${API}/agents/${selAgent}/chat`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: msg }),
+                    signal: AbortSignal.timeout(90000),
+                });
+                clearInterval(dotTimer);
+                dotEl.remove();
+                const json = await res.json();
+                if (!json.success) throw new Error(json.error || "API error");
+                const reply = json.data.reply;
+                msgs[selAgent].push({ role: "agent", text: reply, ts: new Date().toISOString() });
+                msgEl.insertAdjacentHTML("beforeend", _chatBubble("agent", reply));
+                msgEl.scrollTop = msgEl.scrollHeight;
+            } catch(e) {
+                clearInterval(dotTimer);
+                dotEl.remove();
+                const errMsg = e.name === "TimeoutError"
+                    ? `⚠️ ${label} timed out (90s)`
+                    : `⚠️ ${e.message}`;
+                msgEl.insertAdjacentHTML("beforeend", `<div style="font-size:0.73rem;color:var(--red,#f87171);padding:2px 4px">${escHtml(errMsg)}</div>`);
+                msgEl.scrollTop = msgEl.scrollHeight;
+            } finally {
+                inp.disabled = false;
+                send.disabled = false;
+                inp.focus();
+            }
+        };
+        send.addEventListener("click", doSend);
+        inp.addEventListener("keydown", e => { if (e.key === "Enter") doSend(); });
+        if (!collapsed) setTimeout(() => inp.focus(), 50);
+    }
+
+    enableDragWidget(widget, _persist);
+
+    _render();
+}
+
 document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll(".nav-item").forEach(el => {
         el.addEventListener("click", () => navigate(el.dataset.panel));
@@ -2550,6 +3291,8 @@ document.addEventListener("DOMContentLoaded", () => {
     startRefresh();
     checkHealth();
     initWebSocket();
+    initFloatingTasks();
+    initFloatingChat();
     setInterval(updateClock,      1000);
     setInterval(updateStatusBar,  5000);
     setInterval(checkHealth,     60000);
