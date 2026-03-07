@@ -1877,8 +1877,133 @@ function initOfficePanel(data, container) {
         ctx.strokeStyle = "rgba(255,255,255,0.06)"; ctx.lineWidth = 1;
         for (let cx = mr.x + 20; cx < mr.x + mr.w; cx += 20) { ctx.beginPath(); ctx.moveTo(cx, mr.y); ctx.lineTo(cx, mr.y + mr.h); ctx.stroke(); }
         for (let cy = mr.y + 20; cy < mr.y + mr.h; cy += 20) { ctx.beginPath(); ctx.moveTo(mr.x, cy); ctx.lineTo(mr.x + mr.w, cy); ctx.stroke(); }
+        // Isometric diamond grid — two families of diagonal lines (↘ and ↙)
+        // This gives the entire floor area a pseudo-isometric depth feel
+        const TW = 40, TH = 20, FT = 58;
+        ctx.strokeStyle = "rgba(255,255,255,0.065)"; ctx.lineWidth = 0.5;
+        const slope = TH / TW;   // 0.5
+        const sweep = (CH - FT) / slope;  // how far x shifts across full height
+        // Family 1: ↘ (positive slope)
+        for (let x0 = -sweep; x0 < CW; x0 += TW) {
+            ctx.beginPath(); ctx.moveTo(x0, FT); ctx.lineTo(x0 + sweep, CH); ctx.stroke();
+        }
+        // Family 2: ↙ (negative slope)
+        for (let x0 = 0; x0 < CW + sweep; x0 += TW) {
+            ctx.beginPath(); ctx.moveTo(x0, FT); ctx.lineTo(x0 - sweep, CH); ctx.stroke();
+        }
         // Wall-floor shadow strip
         ctx.fillStyle = "rgba(0,0,0,0.14)"; ctx.fillRect(0, 58, CW, 5);
+    }
+
+    function drawRoomWalls() {
+        // ── Shared wall constants ────────────────────────────────────
+        const WH  = 10;   // horizontal wall front-face height (px)
+        const WT  = 8;    // vertical wall thickness (px)
+        const IX  = 4;    // isometric top-face x-offset (left)
+        const IY  = 7;    // isometric top-face y-offset (up)
+        const FG  = "#d0c8b8"; // wall front face
+        const TOP = "#ece4d8"; // wall top face (lighter)
+        const SID = "#c0b8a8"; // side / east-facing face
+        const SHD = "rgba(0,0,0,0.08)"; // base shadow
+
+        // ── Helpers ──────────────────────────────────────────────────
+        // Horizontal wall front + top (bottom of face sits at y, face goes up WH)
+        function hw(x, y, w) {
+            ctx.fillStyle = FG;  ctx.fillRect(x, y - WH, w, WH);
+            ctx.fillStyle = "#ddd5c9"; ctx.fillRect(x, y - WH, w, 2); // top edge highlight
+            ctx.fillStyle = SHD; ctx.fillRect(x, y - 2,  w, 2);       // base shadow
+            // Isometric top face
+            ctx.fillStyle = TOP;
+            ctx.beginPath();
+            ctx.moveTo(x,      y - WH);
+            ctx.lineTo(x + w,  y - WH);
+            ctx.lineTo(x + w - IX, y - WH - IY);
+            ctx.lineTo(x     - IX, y - WH - IY);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = "#c0b8a8"; ctx.lineWidth = 0.75; ctx.stroke();
+        }
+
+        // Vertical solid wall segment (right face visible)
+        function vw(x, y, h) {
+            ctx.fillStyle = SID; ctx.fillRect(x, y, WT, h);
+            ctx.fillStyle = FG;  ctx.fillRect(x, y, 2,  h); // left-edge highlight
+            ctx.fillStyle = SHD; ctx.fillRect(x + WT - 2, y, 2, h);
+        }
+
+        // Vertical glass wall segment
+        function vg(x, y, h) {
+            ctx.fillStyle = "rgba(160,215,245,0.13)"; ctx.fillRect(x, y, WT, h);
+            ctx.strokeStyle = "#a8c8dc"; ctx.lineWidth = 1;
+            for (let py = y; py < y + h; py += 22) {
+                ctx.strokeRect(x + 1, py, WT - 2, Math.min(22, y + h - py));
+            }
+        }
+
+        // Top cap for vertical wall (parallelogram at the top edge)
+        function vcap(x, y) {
+            ctx.fillStyle = TOP;
+            ctx.beginPath();
+            ctx.moveTo(x,          y);
+            ctx.lineTo(x + WT,     y);
+            ctx.lineTo(x + WT - IX, y - IY);
+            ctx.lineTo(x      - IX, y - IY);
+            ctx.closePath(); ctx.fill();
+            ctx.strokeStyle = "#c0b8a8"; ctx.lineWidth = 0.75; ctx.stroke();
+        }
+
+        // Door frame for horizontal opening
+        function doorH(x, y, w) {
+            // Jambs
+            ctx.fillStyle = "#c8b898";
+            ctx.fillRect(x - 2, y - WH, 3, WH);
+            ctx.fillRect(x + w - 1, y - WH, 3, WH);
+            // Lintel
+            ctx.fillRect(x - 2, y - WH, w + 4, 3);
+        }
+
+        // Door frame for vertical opening
+        function doorV(x, y, h) {
+            ctx.fillStyle = "#c8b898";
+            ctx.fillRect(x, y - 2,   WT, 3); // top sill
+            ctx.fillRect(x, y + h - 1, WT, 3); // bottom sill
+        }
+
+        // ── Back wall 3D ledge (wall thickness at floor level) ───────
+        // Shows the back wall has depth; sits right at y=58
+        ctx.fillStyle = "#c0b8ac"; ctx.fillRect(0, 58, CW, 6);
+        ctx.fillStyle = "#d4ccc0"; ctx.fillRect(0, 58, CW, 2); // highlight
+
+        // ── Meeting room north wall  (y=226, x=14–174) ───────────────
+        hw(14, 226, 160);
+
+        // ── Meeting room east wall  (x=174, y=226–378) — glass + door ─
+        vg(174, 226, 54);               // top glass panel
+        // door gap: y=280 to y=318 (h=38)
+        doorV(174, 280, 38);
+        vg(174, 318, 60);               // bottom glass panel
+        vcap(174, 226);                 // top cap once at wall top
+
+        // ── Meeting room south wall  (y=378, x=14–174) ───────────────
+        // door gap: x=90 to x=118 (w=28)
+        hw(14,  378, 76);
+        hw(118, 378, 56);
+        doorH(90, 378, 28);
+
+        // ── Break room north wall  (y=350, x=268–508) ────────────────
+        // door gap: x=312 to x=344 (w=32)
+        hw(268, 350, 44);
+        hw(344, 350, 164);
+        doorH(312, 350, 32);
+
+        // ── Break room west wall  (x=268, y=350–440) ─────────────────
+        vw(268, 350, 90);
+        vcap(268, 350);
+
+        // ── Floor shadows beneath walls ──────────────────────────────
+        ctx.fillStyle = "rgba(0,0,0,0.06)";
+        ctx.fillRect(14,  378, 160, 4); // meeting south
+        ctx.fillRect(268, 350, 240, 4); // break room north
+        ctx.fillRect(268, 350,   4, 90); // break room west (east shadow)
     }
 
     function drawPlant(x, y, type) {
@@ -2424,6 +2549,7 @@ function initOfficePanel(data, container) {
         ctx.clearRect(0, 0, CW, CH);
         ctx.fillStyle = "#e8e0d0"; ctx.fillRect(0, 0, CW, CH);  // warm base
         drawFloor();
+        drawRoomWalls();
         drawWall();
         drawMeetingRoom(ZONES.meeting.x, ZONES.meeting.y);
         drawCoffeeRoom(ZONES.coffee.x, ZONES.coffee.y);
