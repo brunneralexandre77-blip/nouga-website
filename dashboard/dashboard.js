@@ -456,6 +456,19 @@ function showTaskModal(task, editId, container) {
 // Agents — Org chart + side panel
 // ──────────────────────────────────────────────────────────────────────────────
 let _selectedAgent = null;
+let _availableModels = null;  // cached from /api/models
+
+async function loadAvailableModels() {
+    if (_availableModels) return _availableModels;
+    try {
+        const r = await fetch(`${API_BASE}/models`);
+        const j = await r.json();
+        _availableModels = j.data?.models || [];
+    } catch(e) {
+        _availableModels = [];
+    }
+    return _availableModels;
+}
 
 // ── Tools & Memory data ──────────────────────────────────────────────────────
 const TOOLS_REGISTRY = [
@@ -552,7 +565,13 @@ function renderAgents(d) {
 
 function renderAgentDetail(agent, d) {
     if (!agent) return `<div style="padding:20px;color:var(--text3);font-size:0.85rem">Agent not found</div>`;
-    const models  = ["kimi-k2.5","kimi-k2-thinking","claude-sonnet-4-6","claude-haiku-4-5-20251001","gemini-2.5-pro"];
+    // Build dropdown from cached /api/models; fall back to short-id list while loading
+    const modelOptions = (_availableModels && _availableModels.length)
+        ? _availableModels.map(m => ({
+            value: m.short_id,
+            label: `${m.type === "local" ? "⚡ " : "☁️ "}${m.name}`,
+          }))
+        : ["kimi-k2.5","kimi-k2-thinking","claude-sonnet-4-6","claude-haiku-4-5-20251001"].map(v => ({ value: v, label: v }));
     const tools   = AGENT_TOOLS[agent.id] || {};
     const perms   = MEMORY_PERMS[agent.id] || {};
     const allAgents = d.agents || [];
@@ -571,7 +590,7 @@ function renderAgentDetail(agent, d) {
             </div>
             <div>
                 <select class="form-select" id="model-select-${agent.id}" style="font-size:0.72rem;padding:4px 8px">
-                    ${models.map(m=>`<option value="${m}"${agent.model===m?" selected":""}>${m}</option>`).join("")}
+                    ${modelOptions.map(m=>`<option value="${m.value}"${agent.model===m.value?" selected":""}>${m.label}</option>`).join("")}
                 </select>
                 <button class="btn btn-primary" id="model-save-${agent.id}" style="margin-top:5px;width:100%;font-size:0.75rem;padding:5px">Save Model</button>
             </div>
@@ -639,6 +658,9 @@ function renderAgentDetail(agent, d) {
 }
 
 function initAgentsPanel(data, container) {
+    // Pre-load models so dropdown is populated when user clicks an agent
+    loadAvailableModels();
+
     container.querySelectorAll(".org-node-btn[data-agent-id]").forEach(btn => {
         btn.addEventListener("click", () => {
             const agentId = btn.dataset.agentId;
