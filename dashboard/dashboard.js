@@ -1217,104 +1217,454 @@ function renderPeople(d) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Office — 2D Visual Layout
+// Office Panel — Pixel Art Canvas Engine (60 FPS, animated agents)
 // ──────────────────────────────────────────────────────────────────────────────
 function renderOffice(d) {
-    const deskMap = {};
-    (d.desks || []).forEach(dk => { deskMap[dk.agent.toLowerCase()] = dk; });
-
-    const hour = new Date().getHours();
-    if (hour >= 18 || hour < 6) document.body.classList.add("night");
-    else document.body.classList.remove("night");
-
-    const gdsk = (key, fallbackEmoji, fallbackName, fallbackRole, fallbackActivity, fallbackStatus) => {
-        const dk = deskMap[key];
-        const emoji    = dk?.emoji    || fallbackEmoji;
-        const name     = dk?.agent    || fallbackName;
-        const role     = dk?.desk     || fallbackRole;
-        const activity = dk?.activity || fallbackActivity;
-        const status   = dk?.status   || fallbackStatus || "idle";
-        const bubbles  = {
-            busy:   ["Deep in thought…", "Processing…", "On it!", "Running task…"],
-            active: ["Ready!", "All good ✓", "Standing by", "Available"],
-            idle:   ["Taking a break", "Awaiting tasks", "🎵", "..."],
-        };
-        const bubble = bubbles[status]?.[Math.floor(Math.random() * 4)] || "";
-        return `
-            <div class="gdsk ${status} gdsk-${key}" data-agent="${key}" title="${escHtml(activity)}">
-                <div class="gdsk-status"></div>
-                <div class="gdsk-speech">${bubble}</div>
-                <div class="gdsk-emoji">${emoji}</div>
-                <div class="gdsk-name">${name}</div>
-                <div class="gdsk-role">${escHtml(role)}</div>
-            </div>`;
-    };
-
     return `
         <div class="panel-header">
             <div class="panel-title">🏢 Virtual Office</div>
-            <div class="panel-subtitle">Live agent floor · click desk for details${(hour >= 18 || hour < 6) ? " · 🌙 Night mode" : ""}</div>
+            <div class="panel-subtitle">Pixel art · live agents · click to interact</div>
         </div>
-        <div class="office-retro-wrap" style="margin-bottom:16px">
-            <div class="office-game-grid">
-                ${gdsk("alex",    "👔", "Alex",    "CEO",              "Strategic oversight", "active")}
-                ${gdsk("eva",     "📅", "Eva",     "Exec. Assistant",  "Preparing CEO briefing", "active")}
-                <div class="gdsk-meeting" id="meeting-room-btn">
-                    <div class="gdsk-emoji">🗓️</div>
-                    <div class="gdsk-name">Meeting Room</div>
-                    <div class="gdsk-role">Click to book</div>
+        <div class="office-canvas-wrap">
+            <canvas id="office-canvas" class="office-canvas" width="640" height="420"></canvas>
+            <div class="office-sidebar">
+                <div class="office-agent-box" id="office-agent-info">
+                    <div class="office-hint">Click an agent or object</div>
                 </div>
-                ${gdsk("milfred", "🤖", "Milfred", "Tech Lead",        "Reviewing pull requests", "busy")}
-                ${gdsk("ernst",   "🔒", "Ernst",   "Security",         "Running security scan", "busy")}
-                ${gdsk("gordon",  "📈", "Gordon",  "Trading",          "Monitoring BTC position", "active")}
-                ${gdsk("lara",    "📱", "Lara",    "Growth",           "Social media scheduler", "active")}
-                <div class="gdsk-coffee" id="coffee-machine">
-                    <div class="steam"><div class="steam-dot"></div><div class="steam-dot"></div><div class="steam-dot"></div></div>
-                    <div class="gdsk-emoji">☕</div>
-                    <div class="gdsk-name">Coffee</div>
-                    <div class="gdsk-role">Water cooler</div>
+                <div class="office-feed-hdr">Activity Log</div>
+                <div class="office-feed" id="office-feed">
+                    ${(d.activity_feed || []).slice(0, 8).map(f => `
+                        <div class="office-feed-row">
+                            <span class="feed-agent">${f.agent}</span>
+                            <span class="feed-action">${escHtml(f.action)}</span>
+                        </div>`).join("")}
                 </div>
-                ${gdsk("claude",  "🧠", "Claude",  "AI Architect",     "Designing new feature", "active")}
-            </div>
-        </div>
-        <div class="card">
-            <div class="card-title" id="feed-title">Activity Feed</div>
-            <div class="activity-feed" id="activity-feed">
-                ${(d.activity_feed || []).map(f => `
-                    <div class="feed-item">
-                        <span class="feed-time">${f.time}</span>
-                        <span class="feed-agent">${f.agent}</span>
-                        <span class="feed-action">${escHtml(f.action)}</span>
-                    </div>`).join("")}
             </div>
         </div>`;
 }
 
 function initOfficePanel(data, container) {
-    // Coffee machine → water cooler chat
-    container.querySelector("#coffee-machine")?.addEventListener("click", () => {
-        const feed  = container.querySelector("#activity-feed");
-        const title = container.querySelector("#feed-title");
-        if (!feed) return;
-        title.textContent = "☕ Water Cooler Chat";
+    const canvas = container.querySelector("#office-canvas");
+    if (!canvas) return;
+
+    const CW = 640, CH = 420;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = false;
+
+    // ── Layout constants ─────────────────────────────────────────
+    const DW = 92, DSH = 28, DFH = 10, MH = 34, AH = 26;
+    const HY_UP  = 75 + MH + DSH + DFH + 6;   // 153 — upper desk agent home y
+    const HY_LOW = 232 + MH + DSH + DFH + 6;  // 310 — lower desk agent home y
+
+    const ZONES = {
+        upperDesks: [
+            { x:  16, y: 75,  agent: "milfred" },
+            { x: 172, y: 75,  agent: "ernst"   },
+            { x: 328, y: 75,  agent: "gordon"  },
+            { x: 484, y: 75,  agent: "lara"    },
+        ],
+        lowerDesks: [
+            { x: 215, y: 232, agent: "claude"  },
+            { x: 358, y: 232, agent: "eva"     },
+            { x: 492, y: 232, agent: "alex"    },
+        ],
+        coffee:  { x: 545, y: 165, w: 54, h: 72 },
+        meeting: { x: 14,  y: 226, w: 160, h: 152 },
+    };
+
+    const SCREEN_COLORS = {
+        milfred:"#00ff88", ernst:"#ff4444", gordon:"#ffaa00",
+        lara:"#ff44cc", claude:"#00ccff", eva:"#cc88ff", alex:"#4488ff",
+    };
+
+    const AGENT_EMOJI  = { alex:"👔", eva:"📅", milfred:"🤖", ernst:"🔒", gordon:"📈", lara:"📱", claude:"🧠" };
+    const AGENT_ACTS   = {
+        milfred: ["Reviewing PR #42","Debugging canvas render","Planning Sprint 8","Merging feature branch"],
+        ernst:   ["Security audit…","Firewall rules updated","Scanning ports…","Checking fail2ban"],
+        gordon:  ["BTC/ETH long","Freqtrade PnL +4.2%","Chart pattern watch","Algo backtesting"],
+        lara:    ["3 posts scheduled","Analytics review","Content draft","FB verification"],
+        claude:  ["AI pipeline design","Architecture review","WebSocket refactor","Memory schema"],
+        eva:     ["CEO briefing ready","14:00 confirmed","Routing 3 tasks","Calendar updated"],
+        alex:    ["Strategy review","Reading reports","Investor update","Team 1:1 prep"],
+    };
+
+    // ── Agent state ───────────────────────────────────────────────
+    const DEFS = [
+        { id:"milfred", name:"Milfred", role:"Tech Lead",     shirtC:"#16a34a", hairC:"#222",    skinC:"#c68642", hx:ZONES.upperDesks[0].x+38, hy:HY_UP  },
+        { id:"ernst",   name:"Ernst",   role:"Security",      shirtC:"#dc2626", hairC:"#111",    skinC:"#f1c27d", hx:ZONES.upperDesks[1].x+38, hy:HY_UP  },
+        { id:"gordon",  name:"Gordon",  role:"Trading",       shirtC:"#d97706", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.upperDesks[2].x+38, hy:HY_UP  },
+        { id:"lara",    name:"Lara",    role:"Growth",        shirtC:"#db2777", hairC:"#fde047", skinC:"#f1c27d", hx:ZONES.upperDesks[3].x+38, hy:HY_UP  },
+        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#0891b2", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+38, hy:HY_LOW },
+        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+38, hy:HY_LOW },
+        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#111",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+38, hy:HY_LOW },
+    ];
+    const agents = DEFS.map(d => ({
+        ...d, x: d.hx, y: d.hy, tx: d.hx, ty: d.hy,
+        state: "typing", frame: Math.floor(Math.random() * 120),
+        timer: Math.random() * 3000 + 1500, moving: false, _ns: "typing",
+    }));
+
+    // ── Particles ─────────────────────────────────────────────────
+    const particles = [];
+    let steamTick = 0;
+    function spawnSteam() {
+        for (let i = 0; i < 2; i++) particles.push({
+            x: ZONES.coffee.x + 18 + (Math.random() - 0.5) * 8,
+            y: ZONES.coffee.y - 2,
+            vx: (Math.random() - 0.5) * 0.35, vy: -(Math.random() * 0.55 + 0.35),
+            life: 1, decay: Math.random() * 0.013 + 0.007, r: Math.random() * 3 + 1.5,
+        });
+    }
+
+    // ── Activity log ──────────────────────────────────────────────
+    const actLog = (data.activity_feed || []).slice(0, 10).map(f => ({ agent: f.agent, action: f.action }));
+    function addAct(agentName, action) {
+        actLog.unshift({ agent: agentName, action });
+        if (actLog.length > 30) actLog.pop();
+        const feed = document.getElementById("office-feed");
+        if (feed) feed.innerHTML = actLog.slice(0, 10).map(f =>
+            `<div class="office-feed-row"><span class="feed-agent">${f.agent}</span><span class="feed-action">${escHtml(f.action)}</span></div>`
+        ).join("");
+    }
+
+    // ── Drawing helpers ───────────────────────────────────────────
+    function px(x, y, w, h, c) { ctx.fillStyle = c; ctx.fillRect(Math.round(x), Math.round(y), w, h); }
+
+    function drawFloor() {
+        for (let col = 0; col < CW; col += 40) {
+            px(col, 58, 40, CH - 58, (col / 40) % 2 === 0 ? "#1a1828" : "#1c1a2c");
+        }
+        ctx.strokeStyle = "rgba(255,255,255,0.022)"; ctx.lineWidth = 1;
+        for (let gx = 0; gx < CW; gx += 40) {
+            ctx.beginPath(); ctx.moveTo(gx, 58); ctx.lineTo(gx, CH); ctx.stroke();
+        }
+        for (let gy = 58; gy < CH; gy += 40) {
+            ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(CW, gy); ctx.stroke();
+        }
+    }
+
+    function drawWall() {
+        px(0, 0, CW, 58, "#13100e");
+        px(0, 54, CW, 4, "#2a2016");
+        const h = new Date().getHours(), day = h >= 6 && h < 19;
+        [50, 192, 334, 476].forEach(wx => {
+            px(wx, 3, 88, 46, day ? "#0e2a4a" : "#07091a");
+            if (day) {
+                px(wx + 2, 5, 84, 18, "#122d55");
+                px(wx + 36, 7, 12, 12, "#ffd700");
+                px(wx + 34, 9, 16, 8, "rgba(255,215,0,0.35)");
+            } else {
+                [[8,8],[25,14],[55,7],[70,18],[40,25],[15,30],[60,30]].forEach(([sx,sy]) =>
+                    px(wx+sx, 3+sy, 2, 2, "rgba(255,255,255,0.75)"));
+            }
+            ctx.strokeStyle = "#2a2016"; ctx.lineWidth = 3; ctx.strokeRect(wx, 3, 88, 46);
+            ctx.strokeStyle = "#1c1610"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(wx+44,3); ctx.lineTo(wx+44,49); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(wx,26);   ctx.lineTo(wx+88,26); ctx.stroke();
+        });
+    }
+
+    function drawDesk(x, y, agentId) {
+        const gc = SCREEN_COLORS[agentId] || "#00d4ff";
+        // Shadow
+        ctx.fillStyle = "rgba(0,0,0,0.26)";
+        ctx.fillRect(x - 1, y + MH + DSH + DFH, DW + 2, 6);
+        // Monitor stand
+        px(x+34, y+MH-4, 10, 6, "#252525");
+        // Monitor casing
+        px(x+10, y, DW-20, MH-2, "#111");
+        px(x+12, y+2, DW-24, MH-6, "#0a0a1a");
+        // Screen content — animated data bars
+        const bt = Math.floor(Date.now() / 350);
+        for (let row = 0; row < 3; row++) for (let col = 0; col < 5; col++) {
+            if ((bt + row + col) % 3 !== 0) px(x+14+col*11, y+5+row*7, 8, 4, gc + "bb");
+        }
+        // Monitor glow
+        ctx.fillStyle = gc + "16"; ctx.fillRect(x+8, y+MH-7, DW-16, 10);
+        ctx.strokeStyle = "#333"; ctx.lineWidth = 2; ctx.strokeRect(x+10, y, DW-20, MH-2);
+        // Desk surface
+        px(x, y+MH, DW, DSH, "#4a3728");
+        px(x+2, y+MH+2, DW-4, DSH-4, "#523e2d");
+        // Keyboard
+        px(x+18, y+MH+6, 38, 10, "#1c1c1c");
+        px(x+20, y+MH+8, 34, 6, "#292929");
+        // Mouse
+        px(x+62, y+MH+7, 10, 9, "#1a1a1a");
+        px(x+63, y+MH+8, 8, 7, "#222");
+        // Front face + legs
+        px(x, y+MH+DSH, DW, DFH, "#3a2a1c");
+        px(x+4, y+MH+DSH, 6, DFH+2, "#2a1e12");
+        px(x+DW-10, y+MH+DSH, 6, DFH+2, "#2a1e12");
+    }
+
+    function drawCoffeeMachine(x, y) {
+        // Shadow
+        ctx.fillStyle = "rgba(0,0,0,0.28)";
+        ctx.beginPath(); ctx.ellipse(x+26, y+72, 22, 5, 0, 0, Math.PI*2); ctx.fill();
+        // Body
+        px(x, y, 52, 62, "#2c1810");
+        px(x+2, y+2, 48, 58, "#341e12");
+        // Front panel
+        px(x+6, y+5, 36, 20, "#1a0a08");
+        px(x+8, y+7, 32, 16, "#3d1408");
+        // LEDs
+        px(x+10, y+10, 6, 3, "#ff4400");
+        px(x+10, y+14, 6, 3, "#00ff44");
+        px(x+20, y+10, 6, 3, "#ff8800");
+        // Buttons
+        [8, 20, 32].forEach(bx => { px(x+bx,y+30,8,8,"#1a0808"); px(x+bx+1,y+31,6,6,"#2d1010"); });
+        // Spout + cup
+        px(x+18, y+42, 8, 14, "#1a0808");
+        px(x+12, y+57, 18, 14, "#fff8f0");
+        px(x+13, y+58, 16, 12, "#e8dcc8");
+        px(x+14, y+59, 14, 8, "#3d1408");
+        px(x+28, y+60, 3, 8, "#e0d0b8");
+        // Label
+        ctx.fillStyle = "#ff6b35"; ctx.font = "bold 7px monospace"; ctx.textAlign = "center";
+        ctx.fillText("COFFEE", x+26, y+50);
+    }
+
+    function drawMeetingRoom(x, y) {
+        px(x, y, 160, 152, "#1e1830");
+        ctx.strokeStyle = "#7c3aed"; ctx.lineWidth = 2;
+        ctx.setLineDash([5,4]); ctx.strokeRect(x+1,y+1,158,150); ctx.setLineDash([]);
+        ctx.fillStyle = "#a78bfa"; ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
+        ctx.fillText("MEETING ROOM", x+80, y+14);
+        // Table
+        px(x+18, y+22, 124, 72, "#5c4a35");
+        px(x+20, y+24, 120, 68, "#4a3828");
+        // Items on table
+        px(x+50, y+32, 30, 20, "#1a1a2e"); px(x+52, y+34, 26, 16, "#00aaff2a"); // laptop
+        px(x+88, y+34, 20, 14, "#e8e4d8"); px(x+90, y+36, 16, 10, "#d0cac0");   // papers
+        // Chairs top/bottom
+        [20, 52, 84, 116].forEach(cx => {
+            px(x+cx, y+17, 18, 8, "#3a2d20");  px(x+cx+2, y+19, 14, 5, "#4a3a28");
+            px(x+cx, y+96, 18, 8, "#3a2d20");  px(x+cx+2, y+97, 14, 5, "#4a3a28");
+        });
+        ctx.fillStyle = "#10b981"; ctx.font = "7px monospace"; ctx.textAlign = "center";
+        ctx.fillText("● available", x+80, y+120);
+    }
+
+    function drawAgent(a) {
+        const ax = Math.round(a.x), ay = Math.round(a.y);
+        const wf = Math.floor(a.frame / 6) % 4;
+        const lL = a.moving ? (wf===1 ?  3 : wf===3 ? -3 : 0) : 0;
+        const lR = a.moving ? (wf===1 ? -3 : wf===3 ?  3 : 0) : 0;
+
+        // Shadow
+        ctx.fillStyle = "rgba(0,0,0,0.2)";
+        ctx.beginPath(); ctx.ellipse(ax+8, ay+AH+3, 9, 3, 0, 0, Math.PI*2); ctx.fill();
+
+        // Legs / shoes
+        px(ax+2,  ay+16+lL, 5, 9, "#1a1a1a"); px(ax+1,  ay+23+lL, 7, 3, "#333");
+        px(ax+9,  ay+16+lR, 5, 9, "#1a1a1a"); px(ax+9,  ay+23+lR, 7, 3, "#333");
+
+        // Body + shirt detail
+        px(ax+1, ay+9, 14, 9, a.shirtC);
+        px(ax+3, ay+11, 4, 3, a.shirtC + "88");
+
+        // Arms (animated when typing)
+        const ta = a.state === "typing" ? (Math.floor(a.frame/5) % 2) * 2 : 0;
+        px(ax-2, ay+10+ta, 4, 7, a.shirtC);
+        px(ax+14, ay+10+ta, 4, 7, a.shirtC);
+
+        // Head + hair
+        px(ax+2, ay, 12, 11, a.skinC);
+        px(ax+2, ay, 12, 3, a.hairC);
+        px(ax+1, ay+1, 2, 5, a.hairC);
+        px(ax+13, ay+1, 2, 5, a.hairC);
+
+        // Eyes
+        px(ax+4, ay+4, 2, 2, "#111"); px(ax+10, ay+4, 2, 2, "#111");
+
+        // Mouth: happy if coffee/idle, neutral if working
+        if (a.state === "coffee" || a.state === "idle") {
+            px(ax+5,ay+7,6,1,"#111"); px(ax+5,ay+8,2,1,"#111"); px(ax+9,ay+8,2,1,"#111");
+        } else {
+            px(ax+5, ay+7, 6, 1, "#555");
+        }
+
+        // Name tag
+        ctx.font = "bold 7px monospace"; ctx.textAlign = "center";
+        const tw = ctx.measureText(a.name).width;
+        px(ax+8-Math.round(tw/2)-2, ay-14, Math.round(tw)+4, 11, "rgba(0,0,0,0.65)");
+        ctx.fillStyle = "#fff"; ctx.fillText(a.name, ax+8, ay-5);
+
+        // Status dot
+        const dc = {typing:"#16a34a", walking:"#3b82f6", idle:"#d97706", coffee:"#f59e0b"};
+        ctx.fillStyle = dc[a.state] || "#666";
+        ctx.beginPath(); ctx.arc(ax+15, ay+1, 3, 0, Math.PI*2); ctx.fill();
+    }
+
+    function drawNightOverlay() {
+        const h = new Date().getHours();
+        if (h >= 6 && h < 18) return;
+        ctx.fillStyle = "rgba(5,3,20,0.36)"; ctx.fillRect(0, 58, CW, CH-58);
+        [...ZONES.upperDesks, ...ZONES.lowerDesks].forEach(d => {
+            const g = ctx.createRadialGradient(d.x+46, d.y+70, 0, d.x+46, d.y+70, 72);
+            g.addColorStop(0, "rgba(255,200,80,0.13)"); g.addColorStop(1, "rgba(255,200,80,0)");
+            ctx.fillStyle = g; ctx.fillRect(d.x-12, d.y+15, DW+24, 100);
+        });
+    }
+
+    // ── Update ────────────────────────────────────────────────────
+    function update(dt) {
+        steamTick += dt;
+        if (steamTick > 250) { steamTick = 0; spawnSteam(); }
+        for (let i = particles.length-1; i >= 0; i--) {
+            const p = particles[i];
+            p.x += p.vx; p.y += p.vy; p.life -= p.decay;
+            if (p.life <= 0) particles.splice(i, 1);
+        }
+        agents.forEach(a => {
+            a.frame++;
+            a.timer -= dt;
+            if (a.moving) {
+                const dx = a.tx - a.x, dy = a.ty - a.y;
+                const d = Math.sqrt(dx*dx + dy*dy);
+                if (d < 1.5) {
+                    a.x = a.tx; a.y = a.ty; a.moving = false; a.state = a._ns || "typing";
+                } else {
+                    const spd = a.speed * (dt/16);
+                    a.x += (dx/d)*spd; a.y += (dy/d)*spd;
+                }
+            } else if (a.timer <= 0) {
+                const r = Math.random();
+                if (r < 0.12) {
+                    // Go to coffee
+                    a.tx = ZONES.coffee.x + 4 + Math.random()*16;
+                    a.ty = ZONES.coffee.y + ZONES.coffee.h + 3;
+                    a.moving = true; a.state = "walking"; a._ns = "coffee";
+                    a.timer = Math.random()*4000 + 2000;
+                    addAct(a.name, ["Getting coffee ☕","Coffee break ☕","At coffee machine"][Math.floor(Math.random()*3)]);
+                } else if (r < 0.24) {
+                    // Return home
+                    a.tx = a.hx; a.ty = a.hy;
+                    a.moving = true; a.state = "walking"; a._ns = "typing";
+                    a.timer = Math.random()*8000 + 5000;
+                    const acts = AGENT_ACTS[a.id] || ["Working"];
+                    addAct(a.name, acts[Math.floor(Math.random()*acts.length)]);
+                } else if (r < 0.32) {
+                    // Small wander
+                    a.tx = Math.max(22, Math.min(CW-30, a.hx + (Math.random()-0.5)*44));
+                    a.ty = Math.max(65, Math.min(CH-38, a.hy + (Math.random()-0.5)*28));
+                    a.moving = true; a.state = "walking"; a._ns = "idle";
+                    a.timer = Math.random()*3000 + 1500;
+                } else {
+                    a.state = r < 0.8 ? "typing" : "idle";
+                    a.timer = Math.random()*5000 + 3000;
+                }
+            }
+        });
+    }
+
+    // ── Render ────────────────────────────────────────────────────
+    function render() {
+        ctx.clearRect(0, 0, CW, CH);
+        px(0, 0, CW, CH, "#13100e");
+        drawFloor();
+        drawWall();
+        drawMeetingRoom(ZONES.meeting.x, ZONES.meeting.y);
+        ZONES.upperDesks.forEach(d => drawDesk(d.x, d.y, d.agent));
+        ZONES.lowerDesks.forEach(d => drawDesk(d.x, d.y, d.agent));
+        drawCoffeeMachine(ZONES.coffee.x, ZONES.coffee.y);
+        // Steam
+        particles.forEach(p => {
+            ctx.fillStyle = `rgba(210,190,175,${(p.life*0.5).toFixed(2)})`;
+            ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(p.r), Math.round(p.r));
+        });
+        drawNightOverlay();
+        [...agents].sort((a,b) => a.y-b.y).forEach(drawAgent);
+        // Scanlines
+        ctx.fillStyle = "rgba(0,0,0,0.05)";
+        for (let sy = 0; sy < CH; sy += 4) ctx.fillRect(0, sy, CW, 1);
+        // Border
+        ctx.strokeStyle = "rgba(255,255,255,0.04)"; ctx.lineWidth = 1;
+        ctx.strokeRect(0.5, 0.5, CW-1, CH-1);
+    }
+
+    // ── Hit detection ─────────────────────────────────────────────
+    function hitTest(mx, my) {
+        const a = agents.find(a => mx >= a.x-2 && mx <= a.x+20 && my >= a.y-2 && my <= a.y+AH+5);
+        if (a) return { type:"agent", a };
+        const c = ZONES.coffee;
+        if (mx >= c.x && mx <= c.x+c.w && my >= c.y && my <= c.y+c.h) return { type:"coffee" };
+        const m = ZONES.meeting;
+        if (mx >= m.x && mx <= m.x+m.w && my >= m.y && my <= m.y+m.h) return { type:"meeting" };
+        const allDesks = [...ZONES.upperDesks, ...ZONES.lowerDesks];
+        const d = allDesks.find(d => mx >= d.x && mx <= d.x+DW && my >= d.y && my <= d.y+MH+DSH+DFH);
+        if (d) return { type:"desk", d };
+        return null;
+    }
+
+    canvas.addEventListener("click", e => {
+        const r = canvas.getBoundingClientRect();
+        const mx = (e.clientX-r.left)*(CW/r.width), my = (e.clientY-r.top)*(CH/r.height);
+        const hit = hitTest(mx, my);
+        if (!hit) return;
+        if (hit.type === "agent") showAgentInfo(hit.a);
+        else if (hit.type === "desk") { const a = agents.find(ag => ag.id === hit.d.agent); if (a) showAgentInfo(a); }
+        else if (hit.type === "coffee") showCoffeeChat();
+        else if (hit.type === "meeting") showMeetingModal();
+    });
+
+    canvas.addEventListener("mousemove", e => {
+        const r = canvas.getBoundingClientRect();
+        const mx = (e.clientX-r.left)*(CW/r.width), my = (e.clientY-r.top)*(CH/r.height);
+        canvas.style.cursor = hitTest(mx, my) ? "pointer" : "default";
+    });
+
+    // ── Info panel ────────────────────────────────────────────────
+    function setInfo(html) {
+        const b = document.getElementById("office-agent-info"); if (b) b.innerHTML = html;
+    }
+
+    function showAgentInfo(a) {
+        const sl = {typing:"🟢 Typing",walking:"🔵 Walking",idle:"🟡 Idle",coffee:"☕ Coffee"};
+        const acts = AGENT_ACTS[a.id] || [];
+        const cur  = acts[Math.floor(Math.random()*acts.length)] || "Working";
+        setInfo(`
+            <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px">
+                <div style="width:30px;height:30px;border-radius:6px;background:${a.shirtC};display:flex;align-items:center;justify-content:center;font-size:1.1rem">
+                    ${AGENT_EMOJI[a.id]||"👤"}
+                </div>
+                <div>
+                    <div style="font-weight:700;font-size:0.88rem">${a.name}</div>
+                    <div style="font-size:0.72rem;color:var(--text3)">${a.role}</div>
+                </div>
+            </div>
+            <div style="font-size:0.78rem;color:var(--text2);margin-bottom:4px">${sl[a.state]||a.state}</div>
+            <div style="font-size:0.74rem;color:var(--text3);font-style:italic">"${escHtml(cur)}"</div>
+            <button class="btn btn-ghost" style="margin-top:8px;width:100%;font-size:0.72rem"
+                onclick="document.getElementById('office-agent-info').innerHTML='<div class=office-hint>Click an agent or object</div>'">✕ Close</button>`);
+    }
+
+    function showCoffeeChat() {
         const lines = [
-            { time: "now",  agent: "Gordon",  action: "BTC looking bullish this morning ☕" },
-            { time: "1m",   agent: "Lara",    action: "Still waiting on FB verification 😤" },
-            { time: "3m",   agent: "Ernst",   action: "Security scan clean — all good 🛡️" },
-            { time: "5m",   agent: "Claude",  action: "Dashboard Phase 2 looking sharp 🚀" },
-            { time: "8m",   agent: "Milfred", action: "Team sync at 14:00 — don't forget" },
-            { time: "10m",  agent: "Eva",     action: "Alex's 15:00 meeting confirmed 📅" },
+            {agent:"Gordon", action:"BTC up 3% this morning ☕"},
+            {agent:"Lara",   action:"FB verification still pending 😤"},
+            {agent:"Ernst",  action:"All scans clean today 🛡️"},
+            {agent:"Claude", action:"Canvas office looking great 🚀"},
+            {agent:"Milfred",action:"Team sync at 14:00 🕑"},
+            {agent:"Eva",    action:"Alex's 15:00 confirmed 📅"},
         ];
-        feed.innerHTML = lines.map(f => `
-            <div class="feed-item">
-                <span class="feed-time">${f.time}</span>
+        const feed = document.getElementById("office-feed");
+        const hdr  = container.querySelector(".office-feed-hdr");
+        if (hdr) hdr.textContent = "☕ Water Cooler";
+        if (feed) feed.innerHTML = lines.map(f => `
+            <div class="office-feed-row">
                 <span class="feed-agent">${f.agent}</span>
                 <span class="feed-action">${escHtml(f.action)}</span>
             </div>`).join("");
-    });
+        setTimeout(() => {
+            if (hdr) hdr.textContent = "Activity Log";
+            if (feed) feed.innerHTML = actLog.slice(0,10).map(f =>
+                `<div class="office-feed-row"><span class="feed-agent">${f.agent}</span><span class="feed-action">${escHtml(f.action)}</span></div>`
+            ).join("");
+        }, 5500);
+    }
 
-    // Meeting room → booking modal
-    container.querySelector("#meeting-room-btn")?.addEventListener("click", () => {
+    function showMeetingModal() {
         const modal = createModal({
             title: "📅 Book Meeting Room",
             body: `
@@ -1323,48 +1673,39 @@ function initOfficePanel(data, container) {
                 <div class="form-field"><label class="form-label">Attendees</label>
                     <input class="form-input" id="meet-attendees" placeholder="e.g. Alex, Ernst, Gordon"></div>
                 <div class="form-field"><label class="form-label">Time</label>
-                    <input class="form-input" id="meet-time" type="time" value="${String(new Date().getHours()).padStart(2,"0")}:00"></div>
-                <div class="form-field"><label class="form-label">Duration</label>
-                    <select class="form-input" id="meet-duration">
-                        <option value="30">30 minutes</option>
-                        <option value="60" selected>1 hour</option>
-                        <option value="90">90 minutes</option>
-                        <option value="120">2 hours</option>
-                    </select></div>`,
-            footer: `
-                <button class="btn btn-ghost" id="meet-cancel">Cancel</button>
-                <button class="btn btn-primary" id="meet-book">Book Room</button>`,
+                    <input class="form-input" id="meet-time" type="time" value="${String(new Date().getHours()).padStart(2,"0")}:00"></div>`,
+            footer: `<button class="btn btn-ghost" id="meet-cancel">Cancel</button>
+                     <button class="btn btn-primary" id="meet-book">Book Room</button>`,
         });
         modal.querySelector("#meet-cancel").onclick = () => modal.remove();
         modal.querySelector("#meet-book").onclick = () => {
             const title = modal.querySelector("#meet-title").value.trim() || "Meeting";
             const time  = modal.querySelector("#meet-time").value;
             modal.remove();
-            // Update meeting room display
-            const roomEl = container.querySelector(".gdsk-meeting");
-            if (roomEl) {
-                roomEl.querySelector(".gdsk-role").textContent = `${title} @ ${time}`;
-                roomEl.style.borderColor = "var(--purple)";
-                roomEl.style.background  = "rgba(147,51,234,0.12)";
-            }
+            addAct("System", `"${title}" booked @ ${time}`);
+            agents.filter(() => Math.random() < 0.45).forEach(a => {
+                a.tx = Math.max(ZONES.meeting.x+15, Math.min(ZONES.meeting.x+142, ZONES.meeting.x+20+Math.random()*120));
+                a.ty = Math.max(ZONES.meeting.y+28, Math.min(ZONES.meeting.y+130, ZONES.meeting.y+35+Math.random()*90));
+                a.moving = true; a.state = "walking"; a._ns = "idle"; a.timer = 10000;
+            });
         };
-    });
+    }
 
-    // Desk click → show activity tooltip as feed highlight
-    container.querySelectorAll(".gdsk[data-agent]").forEach(el => {
-        el.addEventListener("click", () => {
-            const feed  = container.querySelector("#activity-feed");
-            const title = container.querySelector("#feed-title");
-            const agent = el.querySelector(".gdsk-name")?.textContent || "";
-            const act   = el.title || "Working…";
-            if (!feed) return;
-            title.textContent = `👤 ${agent} — Current Task`;
-            feed.innerHTML = `<div class="feed-item" style="padding:10px 0">
-                <span class="feed-agent">${agent}</span>
-                <span class="feed-action">${escHtml(act)}</span>
-            </div>`;
-        });
+    // ── Animation loop ────────────────────────────────────────────
+    let animId = null, lastTime = 0;
+    function loop(ts) {
+        const dt = Math.min(ts - lastTime, 50);
+        lastTime = ts;
+        update(dt);
+        render();
+        animId = requestAnimationFrame(loop);
+    }
+    animId = requestAnimationFrame(ts => { lastTime = ts; loop(ts); });
+
+    const obs = new MutationObserver(() => {
+        if (!document.body.contains(canvas)) { cancelAnimationFrame(animId); obs.disconnect(); }
     });
+    obs.observe(document.body, { childList: true, subtree: true });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────

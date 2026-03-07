@@ -1093,6 +1093,51 @@ body {
 body.night { background: #060608; }
 body.night .office2d { background: rgba(5,5,12,0.9); }
 
+/* ── Canvas Office Panel ── */
+.office-canvas-wrap {
+    display: flex;
+    gap: 12px;
+    height: 440px;
+    margin-bottom: 4px;
+}
+.office-canvas {
+    flex: 1; min-width: 0;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+    cursor: default;
+    max-height: 440px;
+    width: 100%;
+    height: auto;
+    align-self: flex-start;
+}
+.office-sidebar {
+    width: 200px; flex-shrink: 0;
+    display: flex; flex-direction: column; gap: 8px; min-height: 0;
+}
+.office-agent-box {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 12px; min-height: 95px;
+}
+.office-hint { color: var(--text3); font-size: 0.78rem; text-align: center; padding: 16px 0; }
+.office-feed-hdr {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text3); padding: 2px 0;
+}
+.office-feed {
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 6px 8px;
+    flex: 1; overflow-y: auto; min-height: 0;
+}
+.office-feed-row {
+    padding: 5px 0; border-bottom: 1px solid var(--border);
+    font-size: 0.73rem; display: flex; flex-direction: column; gap: 2px;
+}
+.office-feed-row:last-child { border-bottom: none; }
+.office-feed-row .feed-agent { font-weight: 700; color: var(--blue2); font-size: 0.7rem; }
+.office-feed-row .feed-action { color: var(--text2); }
+
 /* ── Version table ── */
 .version-row {
     display: flex; align-items: center; justify-content: space-between;
