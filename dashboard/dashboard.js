@@ -898,17 +898,36 @@ function wireAgentDetail(agentId, panel) {
         };
     }
 
-    // Quick chat
+    // Quick chat — calls /api/agents/<id>/chat → openclaw agent CLI
     const chatSend = panel.querySelector(`#chat-send-${agentId}`);
-    if (chatSend) {
-        chatSend.onclick = () => {
-            const inp = panel.querySelector(`#chat-input-${agentId}`);
-            const rep = panel.querySelector(`#chat-reply-${agentId}`);
-            if (!inp || !rep || !inp.value.trim()) return;
-            rep.textContent = "⚡ OpenClaw not connected — message queued.";
-            inp.value = "";
-        };
-    }
+    const chatInp  = panel.querySelector(`#chat-input-${agentId}`);
+    const chatRep  = panel.querySelector(`#chat-reply-${agentId}`);
+
+    const doChat = async () => {
+        const msg = chatInp?.value.trim();
+        if (!msg || !chatRep) return;
+        chatInp.value = "";
+        chatInp.disabled = true;
+        chatSend.disabled = true;
+        chatRep.style.color = "var(--text3)";
+        chatRep.textContent = "⏳ Thinking…";
+        try {
+            const d = await apiPost(`agents/${agentId}/chat`, { message: msg });
+            chatRep.style.color = "var(--text2)";
+            chatRep.innerHTML = `<strong style="color:var(--blue2)">${agentId}:</strong> ${escHtml(d.reply)}`
+                + (d.model ? `<span style="color:var(--text3);font-size:0.7rem;margin-left:6px">[${d.model}]</span>` : "");
+        } catch(e) {
+            chatRep.style.color = "var(--red)";
+            chatRep.textContent = `⚠️ ${e.message}`;
+        } finally {
+            chatInp.disabled = false;
+            chatSend.disabled = false;
+            chatInp.focus();
+        }
+    };
+
+    if (chatSend) chatSend.onclick = doChat;
+    if (chatInp)  chatInp.addEventListener("keydown", e => { if (e.key === "Enter") doChat(); });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
