@@ -717,13 +717,17 @@ function renderAgents(d) {
 
 function renderAgentDetail(agent, d) {
     if (!agent) return `<div style="padding:20px;color:var(--text3);font-size:0.85rem">Agent not found</div>`;
-    // Build dropdown from cached /api/models; fall back to short-id list while loading
-    const modelOptions = (_availableModels && _availableModels.length)
-        ? _availableModels.map(m => ({
-            value: m.short_id,
-            label: `${m.type === "local" ? "⚡ " : "☁️ "}${m.name}`,
-          }))
-        : ["kimi-k2.5","kimi-k2-thinking","claude-sonnet-4-6","claude-haiku-4-5-20251001"].map(v => ({ value: v, label: v }));
+    // Use models embedded in /api/agents response — no separate fetch, no race condition
+    const srcModels = (d.available_models?.length ? d.available_models : null)
+                   || (_availableModels?.length    ? _availableModels   : null);
+    const modelOptions = srcModels
+        ? srcModels.map(m => ({ value: m.short_id, label: `${m.type === "local" ? "⚡ " : "☁️ "}${m.name}` }))
+        : ["kimi-k2.5","kimi-k2-thinking","claude-sonnet-4-6","claude-haiku-4-5-20251001","qwen2.5:14b","llama3.1:8b"]
+            .map(v => ({ value: v, label: v }));
+    // Always ensure current model is in the list (renders even if not in openclaw.json)
+    if (agent.model && !modelOptions.find(o => o.value === agent.model)) {
+        modelOptions.unshift({ value: agent.model, label: agent.model });
+    }
     const tools   = AGENT_TOOLS[agent.id] || {};
     const perms   = MEMORY_PERMS[agent.id] || {};
     const allAgents = d.agents || [];
