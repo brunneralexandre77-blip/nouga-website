@@ -350,6 +350,33 @@ body {
 
 /* ── Kanban ── */
 .kanban { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+.kanban-4col { grid-template-columns: 260px repeat(3,1fr); }
+
+/* Parking Lot column */
+.kanban-col-pl { border-top: 3px solid var(--purple); }
+.kanban-col-pl .kanban-header { color: var(--purple); }
+
+.pl-loading { color: var(--text3); font-size: 0.8rem; text-align: center; padding: 16px; }
+
+.pl-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--purple);
+    border-radius: 8px;
+    padding: 10px 11px;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+}
+.pl-card:hover { background: var(--bg3); border-left-color: var(--blue2); }
+.pl-card-done  { opacity: 0.5; border-left-color: var(--green) !important; }
+.pl-card-active { border-left-color: var(--yellow) !important; }
+
+.pl-card-num   { font-size: 0.68rem; color: var(--purple); font-weight: 700; margin-bottom: 3px; }
+.pl-card-title { font-size: 0.8rem; font-weight: 600; color: var(--text); line-height: 1.3; margin-bottom: 4px; }
+.pl-card-stars { font-size: 0.75rem; margin-bottom: 3px; }
+.pl-card-value { font-size: 0.72rem; color: var(--green); margin-bottom: 2px; }
+.pl-card-effort{ font-size: 0.72rem; color: var(--text3); margin-bottom: 6px; }
+.pl-card-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 4px; }
 
 .kanban-col {
     background: var(--bg1);
@@ -1538,7 +1565,7 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
 }
 
 @media (max-width: 700px) {
-    .grid-2, .grid-3, .grid-4, .kanban { grid-template-columns: 1fr; }
+    .grid-2, .grid-3, .grid-4, .kanban, .kanban-4col { grid-template-columns: 1fr; }
     .pipeline-stages { flex-wrap: wrap; }
     .stage::after { display: none; }
     .office-grid { grid-template-columns: 1fr 1fr; }

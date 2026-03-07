@@ -249,9 +249,11 @@ function createModal({ title, body, footer }) {
 // ──────────────────────────────────────────────────────────────────────────────
 let _tasksData = null;
 
+let _parkingLotData = null;
+
 function renderTasks(d) {
     _tasksData = d;
-    const col = (id, title, items, colorClass) => `
+    const col = (id, title, items) => `
         <div class="kanban-col">
             <div class="kanban-header">
                 <span>${title}</span>
@@ -264,21 +266,95 @@ function renderTasks(d) {
                 ${items.map(t => taskCard(t)).join("")}
             </div>
         </div>`;
+
+    const plCol = `
+        <div class="kanban-col kanban-col-pl">
+            <div class="kanban-header">
+                <span>🅿️ Parking Lot</span>
+                <span class="kanban-count" id="count-parking_lot">…</span>
+            </div>
+            <div class="kanban-body" id="list-parking_lot" data-status="parking_lot">
+                <div class="pl-loading">Loading…</div>
+            </div>
+        </div>`;
+
     return `
         <div class="panel-header">
             <div class="panel-title">📋 Tasks</div>
-            <div class="panel-subtitle">Drag cards between columns · click to edit</div>
+            <div class="panel-subtitle">Drag cards between columns · click to edit · drag 🅿️ to activate</div>
         </div>
-        <div class="kanban">
-            ${col("todo",        "📥 To Do",      d.todo,        "gray")}
-            ${col("in_progress", "🔄 In Progress", d.in_progress, "blue")}
-            ${col("done",        "✅ Done",        d.done,        "green")}
+        <div class="kanban kanban-4col">
+            ${plCol}
+            ${col("todo",        "📥 To Do",      d.todo)}
+            ${col("in_progress", "🔄 In Progress", d.in_progress)}
+            ${col("done",        "✅ Done",        d.done)}
         </div>
         ${d.cron_jobs?.length ? `
         <div style="margin-top:20px"><div class="card">
             <div class="card-title">Cron Jobs</div>
             <div class="terminal">${d.cron_jobs.map(j=>`<div class="t-line"><span class="t-success">$</span><span>${escHtml(j)}</span></div>`).join("")}</div>
         </div></div>` : ""}`;
+}
+
+function plCard(item) {
+    const stars = item.priority || "";
+    const statusClass = item.status === "completed" ? "pl-card-done" : item.status === "active" ? "pl-card-active" : "";
+    return `
+        <div class="pl-card ${statusClass}" data-pl-id="${item.id}" data-pl-number="${item.number}">
+            <div class="pl-card-num">#${item.number}</div>
+            <div class="pl-card-title">${escHtml(item.title)}</div>
+            ${stars ? `<div class="pl-card-stars">${stars}</div>` : ""}
+            ${item.value ? `<div class="pl-card-value">💰 ${escHtml(item.value)}</div>` : ""}
+            ${item.effort ? `<div class="pl-card-effort">⏱ ${escHtml(item.effort)}</div>` : ""}
+            <div class="pl-card-actions">
+                <button class="btn btn-ghost pl-btn-detail" data-pl-id="${item.id}" style="font-size:0.7rem;padding:3px 8px">Details</button>
+                ${item.status === "parking_lot" ? `<button class="btn btn-primary pl-btn-activate" data-pl-id="${item.id}" style="font-size:0.7rem;padding:3px 8px">Activate →</button>` : ""}
+            </div>
+        </div>`;
+}
+
+function showPLModal(item, container) {
+    const modal = createModal({
+        title: `#${item.number}: ${item.title} ${item.priority || ""}`,
+        body: `
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px">
+                <div><div class="form-label">Category</div><div style="color:var(--text2);font-size:0.85rem">${escHtml(item.category||"—")}</div></div>
+                <div><div class="form-label">Status</div><div style="color:var(--text2);font-size:0.85rem">${escHtml(item.status)}</div></div>
+                ${item.value  ? `<div><div class="form-label">Value</div><div style="color:var(--green);font-weight:600;font-size:0.9rem">${escHtml(item.value)}</div></div>` : ""}
+                ${item.effort ? `<div><div class="form-label">Effort</div><div style="color:var(--yellow);font-size:0.85rem">${escHtml(item.effort)}</div></div>` : ""}
+            </div>
+            ${item.description ? `<div class="form-label">Description</div><div style="color:var(--text2);font-size:0.85rem;line-height:1.5;margin-top:6px">${escHtml(item.description)}</div>` : ""}`,
+        footer: `
+            <button class="btn btn-ghost" id="pl-m-cancel">Close</button>
+            ${item.status === "parking_lot" ? `<button class="btn btn-primary" id="pl-m-activate">🚀 Activate Project</button>` : ""}
+            ${item.status === "active" ? `<button class="btn btn-success" id="pl-m-complete">✅ Mark Complete</button>` : ""}`,
+    });
+
+    modal.querySelector("#pl-m-cancel").onclick = () => modal.remove();
+
+    const activateBtn = modal.querySelector("#pl-m-activate");
+    if (activateBtn) {
+        activateBtn.onclick = async () => {
+            activateBtn.disabled = true; activateBtn.textContent = "Activating…";
+            try {
+                await apiPost(`parking-lot/${item.id}/activate`, {});
+                modal.remove();
+                loadPanel("tasks");
+            } catch(e) { activateBtn.disabled = false; activateBtn.textContent = "Activate"; alert(e.message); }
+        };
+    }
+
+    const completeBtn = modal.querySelector("#pl-m-complete");
+    if (completeBtn) {
+        completeBtn.onclick = async () => {
+            completeBtn.disabled = true; completeBtn.textContent = "Saving…";
+            try {
+                await apiPost(`parking-lot/${item.id}/complete`, {});
+                modal.remove();
+                loadPanel("tasks");
+            } catch(e) { completeBtn.disabled = false; completeBtn.textContent = "Mark Complete"; alert(e.message); }
+        };
+    }
 }
 
 function taskCard(t) {
@@ -305,7 +381,7 @@ function findTaskById(id) {
 }
 
 function updateKanbanCounts(container) {
-    ["todo","in_progress","done"].forEach(s => {
+    ["todo","in_progress","done","parking_lot"].forEach(s => {
         const list = container.querySelector(`#list-${s}`);
         const countEl = container.querySelector(`#count-${s}`);
         if (list && countEl) countEl.textContent = list.children.length;
@@ -313,8 +389,84 @@ function updateKanbanCounts(container) {
 }
 
 function initTasksPanel(data, container) {
+    // Load parking lot async
+    (async () => {
+        try {
+            const r = await fetch(`${API_BASE}/parking-lot`);
+            const j = await r.json();
+            _parkingLotData = j.data?.items || [];
+            const plList = container.querySelector("#list-parking_lot");
+            const plCount = container.querySelector("#count-parking_lot");
+            if (plList) {
+                plList.innerHTML = _parkingLotData.length
+                    ? _parkingLotData.map(plCard).join("")
+                    : `<div class="pl-loading" style="color:var(--text3)">No items</div>`;
+            }
+            if (plCount) plCount.textContent = _parkingLotData.length;
+
+            // Wire parking lot buttons
+            plList?.querySelectorAll(".pl-btn-detail").forEach(btn => {
+                btn.addEventListener("click", e => {
+                    e.stopPropagation();
+                    const item = _parkingLotData.find(i => String(i.id) === btn.dataset.plId);
+                    if (item) showPLModal(item, container);
+                });
+            });
+            plList?.querySelectorAll(".pl-btn-activate").forEach(btn => {
+                btn.addEventListener("click", async e => {
+                    e.stopPropagation();
+                    const item = _parkingLotData.find(i => String(i.id) === btn.dataset.plId);
+                    if (!item) return;
+                    btn.disabled = true; btn.textContent = "…";
+                    try {
+                        await apiPost(`parking-lot/${item.id}/activate`, {});
+                        loadPanel("tasks");
+                    } catch(err2) { btn.disabled = false; btn.textContent = "Activate →"; }
+                });
+            });
+
+            // Card click → detail modal
+            plList?.querySelectorAll(".pl-card").forEach(card => {
+                card.addEventListener("click", e => {
+                    if (e.target.closest(".pl-btn-detail, .pl-btn-activate")) return;
+                    const item = _parkingLotData.find(i => String(i.id) === card.dataset.plId);
+                    if (item) showPLModal(item, container);
+                });
+            });
+        } catch(e) {
+            const plList = container.querySelector("#list-parking_lot");
+            if (plList) plList.innerHTML = `<div class="pl-loading" style="color:var(--red)">Failed to load</div>`;
+        }
+    })();
+
     // SortableJS drag-and-drop
     if (typeof Sortable !== "undefined") {
+        // Parking lot column — drag out to activate
+        const plEl = container.querySelector("#list-parking_lot");
+        if (plEl) {
+            Sortable.create(plEl, {
+                group: { name: "kanban", pull: true, put: false },
+                animation: 150,
+                ghostClass: "sortable-ghost",
+                sort: false,
+                onEnd: async evt => {
+                    const plId = evt.item.dataset.plId;
+                    if (!plId || evt.from === evt.to) return;
+                    const newStatus = evt.to.dataset.status;
+                    if (newStatus === "todo" || newStatus === "in_progress") {
+                        try {
+                            await apiPost(`parking-lot/${plId}/activate`, {});
+                            loadPanel("tasks");
+                        } catch(e) {
+                            evt.from.appendChild(evt.item);
+                        }
+                    } else {
+                        evt.from.appendChild(evt.item);
+                    }
+                },
+            });
+        }
+
         ["todo","in_progress","done"].forEach(status => {
             const el = container.querySelector(`#list-${status}`);
             if (!el) return;
@@ -325,6 +477,7 @@ function initTasksPanel(data, container) {
                 chosenClass: "sortable-chosen",
                 onEnd: async evt => {
                     const taskId = evt.item.dataset.id;
+                    if (!taskId) return; // parking lot card dropped back
                     const newStatus = evt.to.dataset.status;
                     if (evt.from === evt.to) return;
                     const fromEl = evt.from;
@@ -333,7 +486,6 @@ function initTasksPanel(data, container) {
                         evt.item.dataset.status = newStatus;
                         updateKanbanCounts(container);
                     } catch(e) {
-                        // Revert
                         const ref = fromEl.children[evt.oldIndex] || null;
                         fromEl.insertBefore(evt.item, ref);
                         updateKanbanCounts(container);
