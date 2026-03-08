@@ -1827,423 +1827,319 @@ async function openProjectDrilldown(project) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Project Detail — Gantt Chart View
+// Project Detail — Task List View
 // ──────────────────────────────────────────────────────────────────────────────
 
-const GANTT_DAY_W = 28; // pixels per day
+let _detailRenderToken = 0;
+let _taskViewProject   = null;
+let _taskViewTasks     = [];
 
-let _ganttProject     = null;
-let _ganttTasks       = [];
-let _ganttStartMs     = 0;
-let _ganttDragging    = null; // { taskIdx, side, startX, origLeft, origWidth }
-let _ganttRenderToken = 0;   // incremented each time renderProjectDetail is called; detects stale async results
+const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex"];
+const TASK_STATUSES  = [
+    { value: "todo",        label: "Not Started" },
+    { value: "in_progress", label: "In Progress" },
+    { value: "done",        label: "Done"        },
+];
 
-/** Assign synthetic dates to tasks that lack them */
-function _ganttAssignDates(tasks, project) {
-    const today = new Date();
-    const pStart = project.start_date ? new Date(project.start_date)
-                 : new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const pEnd   = project.target_date ? new Date(project.target_date)
-                 : new Date(today.getFullYear(), today.getMonth() + 2, 0);
-    const totalDays = Math.max(14, Math.round((pEnd - pStart) / 86400000));
-    const slotDays  = Math.max(7, Math.round(totalDays / Math.max(tasks.length, 1)));
-
-    tasks.forEach((t, i) => {
-        if (!t.start_date && !t._start) {
-            const s = new Date(pStart);
-            s.setDate(s.getDate() + i * slotDays);
-            t._start = s.toISOString().slice(0, 10);
-        } else {
-            t._start = t.start_date || t._start;
-        }
-        if (!t.due_date && !t.end_date && !t._end) {
-            const s = new Date(t._start);
-            s.setDate(s.getDate() + slotDays);
-            t._end = s.toISOString().slice(0, 10);
-        } else {
-            t._end = t.due_date || t.end_date || t._end;
-        }
-    });
-}
-
-/** Build timeline bounds from tasks */
-function _ganttBounds(tasks) {
-    let minMs = Infinity, maxMs = -Infinity;
-    tasks.forEach(t => {
-        const s = new Date(t._start || t.start_date || Date.now()).getTime();
-        const e = new Date(t._end   || t.due_date   || t.end_date || Date.now()).getTime();
-        if (s < minMs) minMs = s;
-        if (e > maxMs) maxMs = e;
-    });
-    // pad 7 days on each side
-    minMs -= 7 * 86400000;
-    maxMs += 7 * 86400000;
-    return { minMs, maxMs, totalDays: Math.ceil((maxMs - minMs) / 86400000) };
-}
-
-/** Render the full project detail / Gantt view into panel-projects */
+/** Render the full project detail / task list view into panel-projects */
 async function renderProjectDetail(project) {
-    console.log(`[Gantt] renderProjectDetail called for: "${project.name}"`);
+    console.log(`[TaskView] renderProjectDetail called for: "${project.name}"`);
     const el = $("panel-projects");
-    // Stamp this render with a token so we can detect if another render started while we awaited
-    const renderToken = ++_ganttRenderToken;
-    el.innerHTML = `<div class="gantt-view"><div class="gantt-view-header">
-        <button class="btn btn-ghost" id="gantt-back">← Projects</button>
-        <div class="gantt-view-title">
-            <span style="font-size:1.3rem">${escHtml(project.emoji || "🗂️")}</span>
-            <div>
-                <div style="font-weight:700;font-size:1rem">${escHtml(project.name)}</div>
-                <div style="font-size:0.78rem;color:var(--text2)">${escHtml(project.phase || "")}</div>
-            </div>
-        </div>
-        <div class="gantt-legend">
-            <span class="gantt-legend-dot" style="background:#3a3a3a"></span><span>Not started</span>
-            <span class="gantt-legend-dot" style="background:var(--blue)"></span><span>In progress</span>
-            <span class="gantt-legend-dot" style="background:var(--green)"></span><span>Done</span>
-        </div>
-        <div style="min-width:160px">${progressBar(project.progress)}</div>
-    </div>
-    <div id="gantt-body" style="flex:1;overflow:auto;position:relative">
-        <div class="loading"><div class="spinner"></div> Loading tasks…</div>
-    </div></div>`;
+    const renderToken = ++_detailRenderToken;
 
-    $("gantt-back").onclick = () => loadPanel("projects");
+    el.innerHTML = `<div class="task-view">
+        <div class="task-view-header">
+            <button class="btn btn-ghost" id="task-back">← Projects</button>
+            <div class="task-view-title">
+                <span style="font-size:1.3rem">${escHtml(project.emoji || "🗂️")}</span>
+                <div>
+                    <div style="font-weight:700;font-size:1rem">${escHtml(project.name)}</div>
+                    <div style="font-size:0.78rem;color:var(--text2)">${escHtml(project.phase || "")}</div>
+                </div>
+            </div>
+            <div style="min-width:160px">${progressBar(project.progress || 0)}</div>
+        </div>
+        <div id="task-view-body" style="flex:1;overflow:auto;padding:0 0 16px">
+            <div class="loading"><div class="spinner"></div> Loading tasks…</div>
+        </div>
+    </div>`;
+
+    $("task-back").onclick = () => loadPanel("projects");
 
     try {
-        console.log(`[Gantt] fetchData("tasks") starting — render token ${renderToken}${panelCache["tasks"] ? ` (cache available, age ${Math.round((Date.now() - panelCache["tasks"].ts) / 1000)}s)` : ""}`);
         const tasksData = await fetchData("tasks");
-        panelCache["tasks"] = { data: tasksData, ts: Date.now() };
-        console.log(`[Gantt] fetchData("tasks") succeeded — render token ${renderToken}`);
+        if (_detailRenderToken !== renderToken) return;
+
+        const viewBody = $("task-view-body");
+        if (!viewBody) return;
+
         const allTasks = [
             ...(tasksData.todo        || []),
             ...(tasksData.in_progress || []),
             ...(tasksData.done        || []),
         ];
         const projKey = project.name.toLowerCase();
-        let tasks = allTasks.filter(t => {
+        const tasks = allTasks.filter(t => {
             const tag  = (t.tag     || "").toLowerCase().replace(/^#/, "");
             const proj = (t.project || "").toLowerCase();
             return (tag  && (tag.includes(projKey)  || projKey.includes(tag)))
                 || (proj && (proj.includes(projKey) || projKey.includes(proj)));
         });
 
-        // If no matched tasks, fall back to phases as virtual tasks
-        if (tasks.length === 0 && (project.phases || project.steps)) {
-            const phases = project.phases || project.steps;
-            tasks = phases.map((ph, i) => ({
-                id:        `phase-${i}`,
-                title:     ph.name || ph.title || `Phase ${i + 1}`,
-                status:    ph.status || (ph.progress >= 100 ? "done" : ph.progress > 0 ? "in_progress" : "todo"),
-                progress:  ph.progress ?? 0,
-                start_date: ph.start_date || null,
-                due_date:  ph.target_date || ph.due_date || null,
-                assigned_to: project.owner,
-            }));
-        }
-
-        // If another renderProjectDetail started while we were awaiting, discard this stale result
-        if (_ganttRenderToken !== renderToken) {
-            console.warn(`[Gantt] render token mismatch (got ${renderToken}, current ${_ganttRenderToken}) — discarding stale result`);
-            return;
-        }
-
-        const ganttBody = $("gantt-body");
-        if (!ganttBody) {
-            console.warn(`[Gantt] gantt-body element gone after fetch (panel navigated away) — aborting`);
-            return;
-        }
-
-        _ganttProject = project;
-        _ganttTasks   = tasks;
-        _ganttAssignDates(tasks, project);
-
-        if (tasks.length === 0) {
-            ganttBody.innerHTML = `<div class="gantt-empty"><span style="font-size:2rem">📭</span>No tasks linked to this project yet.</div>`;
-            return;
-        }
-        console.log(`[Gantt] rendering ${tasks.length} tasks for "${project.name}"`);
-        ganttBody.innerHTML = renderGanttChart(tasks);
-        initGanttInteractions();
+        _taskViewProject = project;
+        _taskViewTasks   = tasks;
+        renderTaskList(tasks, project);
     } catch(e) {
-        console.error(`[Gantt] fetchData("tasks") failed:`, e);
-        const ganttBody = $("gantt-body");
-        if (!ganttBody) return;
-        if (panelCache["tasks"]) {
-            console.warn(`[Gantt] network error — falling back to cached tasks: ${e.message}`);
-            const tasksData = panelCache["tasks"].data;
-            const allTasks = [
-                ...(tasksData.todo        || []),
-                ...(tasksData.in_progress || []),
-                ...(tasksData.done        || []),
-            ];
-            const projKey = project.name.toLowerCase();
-            let tasks = allTasks.filter(t => {
-                const tag  = (t.tag     || "").toLowerCase().replace(/^#/, "");
-                const proj = (t.project || "").toLowerCase();
-                return (tag  && (tag.includes(projKey)  || projKey.includes(tag)))
-                    || (proj && (proj.includes(projKey) || projKey.includes(proj)));
-            });
-            _ganttProject = project;
-            _ganttTasks = tasks;
-            _ganttAssignDates(tasks, project);
-            if (tasks.length === 0) {
-                ganttBody.innerHTML = `<div class="gantt-empty"><span style="font-size:2rem">📭</span>No tasks linked to this project yet.</div>`;
-            } else {
-                ganttBody.innerHTML = renderGanttChart(tasks);
-                initGanttInteractions();
-            }
-            _showStaleIndicator(ganttBody.closest(".gantt-view") || ganttBody, "⚠ Showing cached tasks", "var(--yellow,#f5a623)", 5000);
-        } else {
-            ganttBody.innerHTML = errorBox(`Failed to load tasks: ${e.message}`);
-        }
+        console.error(`[TaskView] fetchData failed:`, e);
+        const viewBody = $("task-view-body");
+        if (viewBody) viewBody.innerHTML = errorBox(`Failed to load tasks: ${e.message}`);
     }
 }
 
-/** Render the Gantt chart HTML — table format */
-function renderGanttChart(tasks) {
-    const { minMs, maxMs } = _ganttBounds(tasks);
-    const today = Date.now();
+function renderTaskList(tasks, project) {
+    const viewBody = $("task-view-body");
+    if (!viewBody) return;
 
-    // Build week columns aligned to Monday
-    const weeks = [];
-    const firstDay = new Date(minMs);
-    const dow = firstDay.getDay(); // 0=Sun
-    firstDay.setDate(firstDay.getDate() - (dow === 0 ? 6 : dow - 1));
-    firstDay.setHours(0, 0, 0, 0);
-
-    let cur = firstDay.getTime();
-    while (cur < maxMs) {
-        const weekEnd = cur + 7 * 86400000;
-        const d = new Date(cur);
-        const label = d.toLocaleDateString("en-GB", { day: "numeric", month: "short" });
-        weeks.push({ start: cur, end: weekEnd, label });
-        cur = weekEnd;
-    }
-
-    // Header row
-    let html = `<div class="gantt-table-wrap"><table class="gantt-table"><thead><tr>`;
-    html += `<th class="gantt-th-task">Task</th>`;
-    weeks.forEach(w => {
-        const isCurrent = today >= w.start && today < w.end;
-        html += `<th class="gantt-th-week${isCurrent ? " gantt-week-current" : ""}">${escHtml(w.label)}</th>`;
-    });
-    html += `</tr></thead><tbody>`;
-
-    // Task rows
-    tasks.forEach((t, i) => {
-        const taskStartMs = new Date(t._start || t.start_date || today).getTime();
-        const taskEndMs   = new Date(t._end   || t.due_date   || t.end_date || today).getTime();
-        const status = t.status || "todo";
-        const title  = escHtml(t.title || t.name || "Untitled");
-        const pct    = Math.min(100, Math.max(0, t.progress ?? 0));
-
-        html += `<tr class="gantt-tr">`;
-        html += `<td class="gantt-td-task" data-task-idx="${i}" title="Click to edit">`;
-        html += `<div class="gantt-task-info">`;
-        html += `<span class="gantt-dot gantt-dot-${status}"></span>`;
-        html += `<span class="gantt-task-name">${title}</span>`;
-        html += `<span class="gantt-task-pct">${pct}%</span>`;
-        html += `</div></td>`;
-
-        weeks.forEach(w => {
-            const overlaps = taskStartMs < w.end && taskEndMs > w.start;
-            if (overlaps) {
-                const isStart = taskStartMs >= w.start;
-                const isEnd   = taskEndMs <= w.end;
-                let cls = `gantt-td-bar gantt-bar-${status}`;
-                if (isStart) cls += " bar-start";
-                if (isEnd)   cls += " bar-end";
-                html += `<td class="${cls}"><div class="gantt-bar-fill"></div></td>`;
-            } else {
-                const isCurrent = today >= w.start && today < w.end;
-                html += `<td class="gantt-td-empty${isCurrent ? " gantt-week-current-col" : ""}"></td>`;
-            }
-        });
-
-        html += `</tr>`;
+    // Build parent→children lookup
+    const taskMap = {};
+    tasks.forEach(t => { taskMap[String(t.id)] = t; });
+    const roots    = tasks.filter(t => !t.parent_id || !taskMap[String(t.parent_id)]);
+    const childMap = {};
+    tasks.forEach(t => {
+        if (t.parent_id && taskMap[String(t.parent_id)]) {
+            if (!childMap[String(t.parent_id)]) childMap[String(t.parent_id)] = [];
+            childMap[String(t.parent_id)].push(t);
+        }
     });
 
-    html += `</tbody></table></div>`;
-    return html;
-}
+    function renderTaskRow(task, depth) {
+        const indent = depth * 24;
+        const statusOpts = TASK_STATUSES.map(s =>
+            `<option value="${s.value}"${task.status === s.value ? " selected" : ""}>${escHtml(s.label)}</option>`
+        ).join("");
+        const assigneeOpts = ["", ...TASK_ASSIGNEES].map(a =>
+            `<option value="${a}"${(task.assignee || task.assigned_to || "") === a ? " selected" : ""}>${a ? escHtml(a) : "—"}</option>`
+        ).join("");
+        const depsOpts = tasks.filter(d => d.id !== task.id).map(d =>
+            `<option value="${d.id}"${(task.dependencies || []).includes(String(d.id)) ? " selected" : ""}>${escHtml(d.title || d.name || String(d.id))}</option>`
+        ).join("");
+        const targetDate = task.target_date || task.due_date || "";
+        const depCount   = (task.dependencies || []).length;
 
-/** Wire up task click-to-edit */
-function initGanttInteractions() {
-    const container = $("gantt-body");
-    if (!container) return;
+        let rows = `
+        <tr class="task-row" data-task-id="${task.id}" draggable="true">
+            <td class="task-cell-name" style="padding-left:${12 + indent}px">
+                ${depth > 0 ? `<span class="task-subtask-indent"></span>` : ""}
+                <span class="task-drag-handle" title="Drag to reorder">⠿</span>
+                <input type="text" class="task-name-input" value="${escHtml(task.title || task.name || "")}" data-task-id="${task.id}" placeholder="Task name…" />
+            </td>
+            <td class="task-cell">
+                <select class="task-select task-status-select status-${task.status || "todo"}" data-task-id="${task.id}" data-field="status">
+                    ${statusOpts}
+                </select>
+            </td>
+            <td class="task-cell">
+                <select class="task-select" data-task-id="${task.id}" data-field="assignee">
+                    ${assigneeOpts}
+                </select>
+            </td>
+            <td class="task-cell">
+                <input type="date" class="task-date-input" data-task-id="${task.id}" data-field="target_date" value="${escHtml(targetDate)}" />
+            </td>
+            <td class="task-cell task-cell-deps">
+                <select class="task-select task-deps-select" data-task-id="${task.id}" data-field="dependencies" multiple size="1" title="Hold Ctrl/Cmd to select multiple">
+                    ${depsOpts}
+                </select>
+                ${depCount > 0 ? `<span class="task-dep-count">${depCount}</span>` : ""}
+            </td>
+            <td class="task-cell task-actions-cell">
+                <button class="task-btn task-subtask-btn" data-task-id="${task.id}" title="Add subtask">+ Sub</button>
+                <button class="task-btn task-delete-btn" data-task-id="${task.id}" title="Delete">✕</button>
+            </td>
+        </tr>`;
 
-    container.querySelectorAll(".gantt-td-task").forEach(cell => {
-        cell.addEventListener("click", e => {
-            e.stopPropagation();
-            const idx = parseInt(cell.dataset.taskIdx, 10);
-            openGanttTaskEdit(idx, cell);
-        });
-    });
-}
-
-function _ganttOnMouseMove(e) {
-    if (!_ganttDragging) return;
-    const { idx, side, startX, origLeft, origWidth, bar } = _ganttDragging;
-    const dx = e.clientX - startX;
-    const snapDx = Math.round(dx / GANTT_DAY_W) * GANTT_DAY_W;
-
-    if (side === "left") {
-        const newLeft  = Math.max(0, origLeft + snapDx);
-        const newWidth = Math.max(GANTT_DAY_W, origWidth - snapDx);
-        bar.style.left  = newLeft  + "px";
-        bar.style.width = newWidth + "px";
-    } else {
-        const newWidth = Math.max(GANTT_DAY_W, origWidth + snapDx);
-        bar.style.width = newWidth + "px";
-    }
-}
-
-function _ganttOnMouseUp(e) {
-    if (!_ganttDragging) return;
-    const { idx, side, bar } = _ganttDragging;
-    _ganttDragging = null;
-
-    // Compute new dates from pixel positions
-    const newLeft  = parseFloat(bar.style.left);
-    const newWidth = parseFloat(bar.style.width);
-    const newStartMs = _ganttStartMs + Math.round(newLeft / GANTT_DAY_W) * 86400000;
-    const newEndMs   = newStartMs + Math.round(newWidth / GANTT_DAY_W) * 86400000;
-    const newStart   = new Date(newStartMs).toISOString().slice(0, 10);
-    const newEnd     = new Date(newEndMs).toISOString().slice(0, 10);
-
-    // Update in-memory task
-    const task = _ganttTasks[idx];
-    if (task) {
-        task._start = newStart;
-        task._end   = newEnd;
-        task.start_date = newStart;
-        if (task.due_date !== undefined)  task.due_date  = newEnd;
-        if (task.end_date !== undefined)  task.end_date  = newEnd;
-
-        // Update task cell dates display
-        const ganttBody = $("gantt-body");
-        if (ganttBody) {
-            const cells = ganttBody.querySelectorAll(`.gantt-task-cell[data-task-idx="${idx}"] .gantt-task-date`);
-            if (cells[0]) cells[0].textContent = new Date(newStartMs).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
-            if (cells[1]) cells[1].textContent = new Date(newEndMs).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+        if (childMap[String(task.id)]) {
+            childMap[String(task.id)].forEach(child => { rows += renderTaskRow(child, depth + 1); });
         }
-
-        // Persist via API if task has a real id
-        if (task.id && !String(task.id).startsWith("phase-")) {
-            const body = { start_date: newStart };
-            if (task.due_date !== undefined) body.due_date = newEnd;
-            else if (task.end_date !== undefined) body.end_date = newEnd;
-            apiPut(`tasks/${task.id}`, body).catch(() => {/* silent */});
-        }
+        return rows;
     }
-}
 
-/** Open a small popup to edit a task's name/dates/progress */
-function openGanttTaskEdit(idx, anchorEl) {
-    // Remove any existing popup
-    document.querySelectorAll(".gantt-task-popup").forEach(p => p.remove());
+    const tableRows = roots.map(t => renderTaskRow(t, 0)).join("");
 
-    const task = _ganttTasks[idx];
-    if (!task) return;
-
-    const popup = document.createElement("div");
-    popup.className = "gantt-task-popup";
-
-    const startVal = task._start || task.start_date || "";
-    const endVal   = task._end   || task.due_date   || task.end_date || "";
-    const pct      = task.progress ?? 0;
-    const statusOpts = ["todo","in_progress","done"].map(s =>
-        `<option value="${s}"${task.status===s?" selected":""}>${s.replace("_"," ")}</option>`).join("");
-
-    popup.innerHTML = `
-        <div class="gantt-task-popup-title">✏️ Edit Task</div>
-        <div class="form-row">
-            <label class="form-label">Name</label>
-            <input type="text" id="gpop-name" value="${escHtml(task.title || task.name || "")}" />
-        </div>
-        <div class="form-row">
-            <label class="form-label">Status</label>
-            <select id="gpop-status">${statusOpts}</select>
-        </div>
-        <div class="form-row">
-            <label class="form-label">Start date</label>
-            <input type="date" id="gpop-start" value="${escHtml(startVal)}" />
-        </div>
-        <div class="form-row">
-            <label class="form-label">End date</label>
-            <input type="date" id="gpop-end" value="${escHtml(endVal)}" />
-        </div>
-        <div class="form-row">
-            <label class="form-label">Progress: <span id="gpop-pct-val">${pct}</span>%</label>
-            <input type="range" id="gpop-pct" min="0" max="100" value="${pct}" />
-        </div>
-        <div class="gantt-popup-footer">
-            <button class="btn btn-ghost" id="gpop-cancel">Cancel</button>
-            <button class="btn btn-primary" id="gpop-save">Save</button>
+    viewBody.innerHTML = `
+        <table class="task-table">
+            <thead>
+                <tr class="task-thead-row">
+                    <th class="task-th task-th-name">Task Name</th>
+                    <th class="task-th task-th-status">Status</th>
+                    <th class="task-th task-th-assignee">Assigned To</th>
+                    <th class="task-th task-th-date">Target Date</th>
+                    <th class="task-th task-th-deps">Dependencies</th>
+                    <th class="task-th task-th-actions">Actions</th>
+                </tr>
+            </thead>
+            <tbody id="task-tbody">
+                ${tableRows || `<tr><td colspan="6" class="task-empty-row">No tasks yet — click "+ Add Task" to create one.</td></tr>`}
+            </tbody>
+        </table>
+        <div class="task-add-bar">
+            <button class="btn btn-primary" id="task-add-new-btn">+ Add Task</button>
         </div>`;
 
-    document.body.appendChild(popup);
+    initTaskListInteractions(tasks, project);
+    initTaskDragDrop(tasks, project);
+}
 
-    // Position popup near anchor
-    const rect = anchorEl.getBoundingClientRect();
-    const popW = 280, popH = 300;
-    let top  = rect.bottom + 6;
-    let left = rect.left;
-    if (top + popH > window.innerHeight) top  = rect.top - popH - 6;
-    if (left + popW > window.innerWidth) left = window.innerWidth - popW - 10;
-    popup.style.top  = Math.max(8, top)  + "px";
-    popup.style.left = Math.max(8, left) + "px";
+function initTaskListInteractions(tasks, project) {
+    const viewBody = $("task-view-body");
+    if (!viewBody) return;
 
-    // Live progress label
-    popup.querySelector("#gpop-pct").oninput = function() {
-        popup.querySelector("#gpop-pct-val").textContent = this.value;
-    };
+    const taskMap = {};
+    tasks.forEach(t => { taskMap[String(t.id)] = t; });
 
-    popup.querySelector("#gpop-cancel").onclick = () => popup.remove();
+    // Inline name editing
+    viewBody.querySelectorAll(".task-name-input").forEach(input => {
+        const save = () => {
+            const task = taskMap[String(input.dataset.taskId)];
+            if (!task) return;
+            const newTitle = input.value.trim();
+            if (newTitle && newTitle !== (task.title || task.name || "")) {
+                task.title = newTitle;
+                apiPut(`tasks/${task.id}`, { title: newTitle }).catch(e => console.error("[TaskView] save name:", e));
+            }
+        };
+        input.addEventListener("blur", save);
+        input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } });
+    });
 
-    popup.querySelector("#gpop-save").onclick = async () => {
-        const newName   = popup.querySelector("#gpop-name").value.trim();
-        const newStatus = popup.querySelector("#gpop-status").value;
-        const newStart  = popup.querySelector("#gpop-start").value;
-        const newEnd    = popup.querySelector("#gpop-end").value;
-        const newPct    = parseInt(popup.querySelector("#gpop-pct").value, 10);
+    // Inline field editing (select / date)
+    viewBody.querySelectorAll(".task-select, .task-date-input").forEach(el => {
+        el.addEventListener("change", () => {
+            const task  = taskMap[String(el.dataset.taskId)];
+            const field = el.dataset.field;
+            if (!task || !field) return;
 
-        // Update in-memory
-        if (task.title !== undefined) task.title = newName;
-        if (task.name  !== undefined) task.name  = newName;
-        task.status   = newStatus;
-        task._start   = newStart;
-        task._end     = newEnd;
-        task.start_date = newStart;
-        if (task.due_date !== undefined)  task.due_date  = newEnd;
-        if (task.end_date !== undefined)  task.end_date  = newEnd;
-        task.progress = newPct;
-        popup.remove();
+            let val;
+            if (el.tagName === "SELECT" && el.multiple) {
+                val = Array.from(el.selectedOptions).map(o => o.value);
+            } else {
+                val = el.value;
+            }
+            task[field] = val;
 
-        // Re-render the chart with updated data
-        const ganttBody = $("gantt-body");
-        if (ganttBody) {
-            ganttBody.innerHTML = renderGanttChart(_ganttTasks);
-            initGanttInteractions();
-        }
+            // Update status select color class
+            if (field === "status" && el.classList.contains("task-status-select")) {
+                el.className = el.className.replace(/\bstatus-\S+/g, "");
+                el.classList.add(`status-${val}`);
+            }
 
-        // Persist via API
-        if (task.id && !String(task.id).startsWith("phase-")) {
-            const body = { status: newStatus, progress: newPct, start_date: newStart };
-            if (task.due_date !== undefined) body.due_date = newEnd;
-            apiPut(`tasks/${task.id}`, body).catch(() => {/* silent */});
-        }
-    };
+            apiPut(`tasks/${task.id}`, { [field]: val }).catch(e => console.error("[TaskView] save field:", e));
+        });
+    });
 
-    // Close on outside click
-    setTimeout(() => {
-        document.addEventListener("click", function outsideClick(e) {
-            if (!popup.contains(e.target)) {
-                popup.remove();
-                document.removeEventListener("click", outsideClick);
+    // Add subtask
+    viewBody.querySelectorAll(".task-subtask-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const parentId = btn.dataset.taskId;
+            try {
+                const newTask = await apiPost("tasks", {
+                    title: "New subtask",
+                    status: "todo",
+                    project: project.name,
+                    parent_id: parentId,
+                });
+                _taskViewTasks = [..._taskViewTasks, newTask];
+                renderTaskList(_taskViewTasks, project);
+                // Focus the new task's name input
+                setTimeout(() => {
+                    const inp = $("task-view-body")?.querySelector(`input[data-task-id="${newTask.id}"]`);
+                    if (inp) { inp.select(); inp.focus(); }
+                }, 50);
+            } catch(e) {
+                console.error("[TaskView] add subtask:", e);
+                alert("Failed to add subtask: " + e.message);
             }
         });
-    }, 10);
+    });
+
+    // Delete task
+    viewBody.querySelectorAll(".task-delete-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            if (!confirm("Delete this task?")) return;
+            const id = btn.dataset.taskId;
+            try {
+                await apiDelete(`tasks/${id}`);
+                _taskViewTasks = _taskViewTasks.filter(t => String(t.id) !== String(id));
+                renderTaskList(_taskViewTasks, project);
+            } catch(e) {
+                console.error("[TaskView] delete:", e);
+                alert("Failed to delete: " + e.message);
+            }
+        });
+    });
+
+    // Add new top-level task
+    const addBtn = $("task-add-new-btn");
+    if (addBtn) {
+        addBtn.addEventListener("click", async () => {
+            try {
+                const newTask = await apiPost("tasks", {
+                    title: "New task",
+                    status: "todo",
+                    project: project.name,
+                });
+                _taskViewTasks = [..._taskViewTasks, newTask];
+                renderTaskList(_taskViewTasks, project);
+                setTimeout(() => {
+                    const inp = $("task-view-body")?.querySelector(`input[data-task-id="${newTask.id}"]`);
+                    if (inp) { inp.select(); inp.focus(); }
+                }, 50);
+            } catch(e) {
+                console.error("[TaskView] add task:", e);
+                alert("Failed to add task: " + e.message);
+            }
+        });
+    }
+}
+
+function initTaskDragDrop(tasks, project) {
+    const tbody = $("task-tbody");
+    if (!tbody) return;
+
+    let dragSrc = null;
+
+    tbody.querySelectorAll(".task-row").forEach(row => {
+        row.addEventListener("dragstart", e => {
+            dragSrc = row;
+            row.classList.add("task-row-dragging");
+            e.dataTransfer.effectAllowed = "move";
+        });
+        row.addEventListener("dragend", () => {
+            row.classList.remove("task-row-dragging");
+            tbody.querySelectorAll(".task-row-over").forEach(r => r.classList.remove("task-row-over"));
+            dragSrc = null;
+        });
+        row.addEventListener("dragover", e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            tbody.querySelectorAll(".task-row-over").forEach(r => r.classList.remove("task-row-over"));
+            if (row !== dragSrc) row.classList.add("task-row-over");
+        });
+        row.addEventListener("drop", e => {
+            e.stopPropagation();
+            if (!dragSrc || dragSrc === row) return;
+            const srcId  = dragSrc.dataset.taskId;
+            const dstId  = row.dataset.taskId;
+            const srcIdx = _taskViewTasks.findIndex(t => String(t.id) === srcId);
+            const dstIdx = _taskViewTasks.findIndex(t => String(t.id) === dstId);
+            if (srcIdx < 0 || dstIdx < 0) return;
+            const reordered = [..._taskViewTasks];
+            const [moved] = reordered.splice(srcIdx, 1);
+            reordered.splice(dstIdx, 0, moved);
+            _taskViewTasks = reordered;
+            renderTaskList(_taskViewTasks, project);
+        });
+    });
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -4261,9 +4157,9 @@ async function loadPanel(panelId) {
     if (!hasCache) {
         // First load: show spinner (no content yet)
         el.innerHTML = loading();
-    } else if (!(panelId === "projects" && $("gantt-body"))) {
+    } else if (!(panelId === "projects" && $("task-view-body"))) {
         // Subsequent refresh: keep existing content, show a subtle "refreshing" badge
-        // (but skip if the user is currently viewing the Gantt — don't spam the Gantt with a badge)
+        // (but skip if the user is currently viewing a project's task list)
         _showStaleIndicator(el, "↻ refreshing…", "var(--yellow,#f5a623)");
     }
 
@@ -4278,9 +4174,9 @@ async function loadPanel(panelId) {
         }
         // Success — update cache and render
         panelCache[panelId] = { data, html, ts: Date.now() };
-        // Don't overwrite an active Gantt view (user clicked a project while this fetch was in flight)
-        if (panelId === "projects" && $("gantt-body")) {
-            console.log("[loadPanel] projects fetch succeeded but Gantt is active — cache updated, skipping render");
+        // Don't overwrite an active task-list view (user clicked a project while this fetch was in flight)
+        if (panelId === "projects" && $("task-view-body")) {
+            console.log("[loadPanel] projects fetch succeeded but task view is active — cache updated, skipping render");
         } else {
             el.innerHTML = html;
             if (panel.init) panel.init(data, el);
@@ -4289,9 +4185,9 @@ async function loadPanel(panelId) {
         }
     } catch(e) {
         console.error(`[loadPanel] failed to load panel "${panelId}":`, e);
-        // Don't overwrite an active Gantt view with a projects-panel error
-        if (panelId === "projects" && $("gantt-body")) {
-            console.log("[loadPanel] projects fetch failed but Gantt is active — suppressing error overlay");
+        // Don't overwrite an active task-list view with a projects-panel error
+        if (panelId === "projects" && $("task-view-body")) {
+            console.log("[loadPanel] projects fetch failed but task view is active — suppressing error overlay");
         } else if (hasCache) {
             // Content already loaded once — restore it and show a non-intrusive warning
             el.innerHTML = panelCache[panelId].html;
@@ -4327,9 +4223,9 @@ function startRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = setInterval(() => {
         if (!activePanel) return;
-        // Don't overwrite the Gantt view — if gantt-body is present, the user is viewing a project detail
-        if (activePanel === "projects" && $("gantt-body")) {
-            console.log("[Refresh] skipping auto-refresh — Gantt view is active");
+        // Don't overwrite the task-list view — if task-view-body is present, user is viewing a project
+        if (activePanel === "projects" && $("task-view-body")) {
+            console.log("[Refresh] skipping auto-refresh — task view is active");
             return;
         }
         loadPanel(activePanel);
