@@ -32,12 +32,22 @@
                 
                 // Test 2: Send chat message
                 status.textContent = "Sending chat message...";
-                const chatRes = await fetch(`${API}/agents/lara/chat`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ message: "Test from debug page" }),
-                    credentials: "include"
-                });
+                const chatUrl = `${API}/agents/lara/chat`;
+                result.innerHTML += `<p>Chat URL: ${chatUrl}</p>`;
+                
+                try {
+                    const chatRes = await fetch(chatUrl, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ message: "Test from debug page" }),
+                        credentials: "include",
+                        mode: "cors"
+                    });
+                    result.innerHTML += `<p>Response received, status: ${chatRes.status}</p>`;
+                } catch (fetchErr) {
+                    result.innerHTML += `<p style="color:red">Fetch error: ${fetchErr.name}: ${fetchErr.message}</p>`;
+                    throw fetchErr;
+                }
                 
                 result.innerHTML += `<p>Chat HTTP: ${chatRes.status}</p>`;
                 
