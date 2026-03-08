@@ -574,7 +574,7 @@ function initTasksPanel(data, container) {
     // Load parking lot async
     (async () => {
         try {
-            const r = await fetch(`${API}/parking-lot`);
+            const r = await fetch(`${API}/parking-lot`, { credentials: "include" });
             const j = await r.json();
             _parkingLotData = j.data?.items || [];
             const visiblePL = _parkingLotData.filter(i => i.status === "parking_lot");
