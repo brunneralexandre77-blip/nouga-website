@@ -3879,6 +3879,7 @@ function initFloatingChat() {
     let bodyH     = saved.h || 320;
     const msgs      = {};  // in-memory per-agent message buffer (capped at 50)
     const msgsError = {};  // track agents where history fetch failed
+    const THINK_ID  = "fch-thinking";
 
     const widget = document.createElement("div");
     widget.id = "float-chat";
@@ -3934,7 +3935,9 @@ function initFloatingChat() {
         });
         if (!msgs[selAgent]?.length && !msgsError[selAgent]) {
             // Load history from API (first open per agent)
+            console.log(`[chat] loading history for agent=${selAgent}`);
             fetchData(`agents/${selAgent}/chat/history`).then(d => {
+                console.log(`[chat] history response for ${selAgent}:`, d);
                 if (!msgs[selAgent]) msgs[selAgent] = [];
                 (d.messages || []).forEach(m => {
                     msgs[selAgent].push({ role: "user",  text: m.user_msg,    ts: m.created_at });
@@ -3943,7 +3946,7 @@ function initFloatingChat() {
                     msgEl.insertAdjacentHTML("beforeend", _chatBubble("agent", m.agent_reply, m.created_at));
                 });
                 msgEl.scrollTop = msgEl.scrollHeight;
-            }).catch(() => { msgsError[selAgent] = true; });
+            }).catch(err => { console.error(`[chat] history fetch failed for ${selAgent}:`, err); msgsError[selAgent] = true; });
         }
         msgEl.scrollTop = msgEl.scrollHeight;
 
@@ -3971,12 +3974,14 @@ function initFloatingChat() {
             if (!msgs[selAgent]) msgs[selAgent] = [];
             msgs[selAgent].push({ role: "user", text: msg, ts: now });
             if (msgs[selAgent].length > 100) msgs[selAgent].splice(0, msgs[selAgent].length - 100);
+            console.log(`[chat] sending message to agent=${selAgent}:`, msg);
             msgEl.insertAdjacentHTML("beforeend", _chatBubble("user", msg, now));
+            console.log(`[chat] user bubble added to UI`);
             // Thinking indicator
             const label = _agentInfo(selAgent).name;
             let dots = 0;
             const dotEl = document.createElement("div");
-            dotEl.id = thinkId;
+            dotEl.id = THINK_ID;
             dotEl.style.cssText = "font-size:0.73rem;color:var(--text3,#888);padding:2px 4px;";
             dotEl.textContent = `⏳ ${label} thinking…`;
             msgEl.appendChild(dotEl);
@@ -3996,10 +4001,12 @@ function initFloatingChat() {
                 clearInterval(dotTimer);
                 dotEl.remove();
                 const json = await res.json();
+                console.log(`[chat] response received from ${selAgent}:`, json);
                 if (!json.success) throw new Error(json.error || "API error");
                 const reply = json.data.reply;
                 msgs[selAgent].push({ role: "agent", text: reply, ts: new Date().toISOString() });
                 msgEl.insertAdjacentHTML("beforeend", _chatBubble("agent", reply));
+                console.log(`[chat] agent bubble added to UI`);
                 msgEl.scrollTop = msgEl.scrollHeight;
             } catch(e) {
                 clearInterval(dotTimer);
