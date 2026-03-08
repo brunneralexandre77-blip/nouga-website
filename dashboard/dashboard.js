@@ -3952,7 +3952,13 @@ function initFloatingChat() {
 
         // Events
         widget.querySelector("#fch-header").addEventListener("click", () => {
+            const wasCollapsed = collapsed;
             collapsed = !collapsed;
+            // Force fresh history fetch when expanding
+            if (wasCollapsed && !collapsed) {
+                delete msgs[selAgent];
+                delete msgsError[selAgent];
+            }
             _persist();
             _render();
         });
@@ -4028,6 +4034,27 @@ function initFloatingChat() {
     }
 
     enableDragWidget(widget, _persist);
+
+    async function _pollHistory() {
+        if (collapsed) return;
+        const msgEl = widget.querySelector("#fch-messages");
+        if (!msgEl || msgEl.querySelector("#fch-thinking")) return;
+        try {
+            const d = await fetchData(`agents/${selAgent}/chat/history`);
+            const incoming = (d.messages || []).length * 2;
+            if (incoming === (msgs[selAgent] || []).length) return;
+            msgs[selAgent] = [];
+            msgEl.innerHTML = "";
+            (d.messages || []).forEach(m => {
+                msgs[selAgent].push({ role: "user",  text: m.user_msg,    ts: m.created_at });
+                msgs[selAgent].push({ role: "agent", text: m.agent_reply, ts: m.created_at });
+                msgEl.insertAdjacentHTML("beforeend", _chatBubble("user",  m.user_msg,    m.created_at));
+                msgEl.insertAdjacentHTML("beforeend", _chatBubble("agent", m.agent_reply, m.created_at));
+            });
+            msgEl.scrollTop = msgEl.scrollHeight;
+        } catch (_) { /* silently skip failed poll */ }
+    }
+    setInterval(_pollHistory, 5000);
 
     _render();
 }
