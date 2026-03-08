@@ -3622,6 +3622,145 @@ function renderTeam(d) {
 // ──────────────────────────────────────────────────────────────────────────────
 // System — Network Diagram + Version Checker
 // ──────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// Skills Inventory (static data)
+// ──────────────────────────────────────────────────────────────────────────────
+const SKILLS_DATA = {
+    system: [
+        { name: "Get Shit Done (GSD)", icon: "🚀", usedBy: "All agents",  status: "active", desc: "Systematic workflow & task management" },
+        { name: "UI/UX Pro Max",        icon: "🎨", usedBy: "Claude",      status: "active", desc: "50 styles, 21 palettes" },
+        { name: "Elite Frontend UX",    icon: "💎", usedBy: "Claude",      status: "active", desc: "Production-grade interfaces" },
+        { name: "Claude Code MCP",      icon: "🔧", usedBy: "Claude",      status: "active", desc: "Full MCP tool access" },
+        { name: "Antfarm Workflows",    icon: "🐜", usedBy: "Milfred",     status: "active", desc: "Multi-agent orchestration" },
+    ],
+    agents: [
+        {
+            name: "Claude", icon: "🤖",
+            skills: ["Get Shit Done (GSD)", "UI/UX Pro Max", "Elite Frontend UX", "Claude Code MCP"],
+        },
+        {
+            name: "Milfred", icon: "👤",
+            skills: ["Antfarm Workflows", "Get Shit Done (GSD)"],
+        },
+        {
+            name: "Ernst", icon: "🔍",
+            skills: ["Quality Assurance"],
+        },
+        {
+            name: "Gordon", icon: "📈",
+            skills: ["Trading Algorithms"],
+        },
+        {
+            name: "Lara", icon: "✍️",
+            skills: ["Content Creation"],
+        },
+        {
+            name: "Eva", icon: "📋",
+            skills: ["Executive Assistant"],
+        },
+    ],
+    pending: [
+        { name: "RTK (Token Optimization)", priority: "high",   source: "rtk-ai/rtk"           },
+        { name: "Code Review Agent",         priority: "high",   source: "Anthropic"             },
+        { name: "System Architect",          priority: "high",   source: "Custom"                },
+        { name: "Ralph (Autonomous Loop)",   priority: "medium", source: "frankbria/ralph"       },
+        { name: "Vibe Kanban",               priority: "medium", source: "bloopai/vibe"          },
+        { name: "Claude Code Templates",     priority: "medium", source: "davila7/templates"     },
+        { name: "Super Powers",              priority: "medium", source: "openclaw"              },
+        { name: "Supabase",                  priority: "medium", source: "Research"              },
+        { name: "Figma Toolkit",             priority: "low",    source: "Anthropic"             },
+        { name: "Context 7",                 priority: "low",    source: "Anthropic"             },
+        { name: "Playwright CLI",            priority: "low",    source: "openclaw"              },
+        { name: "Obsidian",                  priority: "low",    source: "openclaw"              },
+    ],
+};
+
+function renderSkills() {
+    const priorityColor = p => p === "high" ? "red" : p === "medium" ? "yellow" : "gray";
+
+    const systemRows = SKILLS_DATA.system.map(s => `
+        <div class="service-row">
+            <div class="service-left">
+                <span style="font-size:1.2rem">${s.icon}</span>
+                <div>
+                    <div class="service-name">${escHtml(s.name)}</div>
+                    <div class="service-port">${escHtml(s.desc)}</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+                <span style="font-size:0.75rem;color:var(--text3)">${escHtml(s.usedBy)}</span>
+                ${badge("active", "green")}
+            </div>
+        </div>`).join("");
+
+    const agentRows = SKILLS_DATA.agents.map(a => `
+        <div class="service-row" style="align-items:flex-start;padding:10px 0">
+            <div class="service-left" style="align-items:flex-start">
+                <span style="font-size:1.2rem;margin-top:2px">${a.icon}</span>
+                <div>
+                    <div class="service-name">${escHtml(a.name)}</div>
+                    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">
+                        ${a.skills.map(sk => `<span style="background:var(--bg3,#222236);border:1px solid var(--border,#333);border-radius:4px;padding:2px 8px;font-size:0.72rem;color:var(--text2)">${escHtml(sk)}</span>`).join("")}
+                    </div>
+                </div>
+            </div>
+        </div>`).join("");
+
+    const pendingRows = SKILLS_DATA.pending.map(s => `
+        <div class="service-row">
+            <div class="service-left">
+                <span style="font-size:1rem">📦</span>
+                <div>
+                    <div class="service-name">${escHtml(s.name)}</div>
+                    <div class="service-port">${escHtml(s.source)}</div>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+                ${badge(s.priority, priorityColor(s.priority))}
+                <button class="btn btn-ghost" style="padding:2px 8px;font-size:0.7rem;opacity:0.5;cursor:default" disabled>Install</button>
+            </div>
+        </div>`).join("");
+
+    return `
+        <div class="panel-header">
+            <div class="panel-title">🧩 Skills Inventory</div>
+            <div class="panel-subtitle">Installed capabilities · Agent assignments · Pending installs</div>
+        </div>
+        <div class="grid-3" style="margin-bottom:16px">
+            <div class="stat-card">
+                <div class="stat-label">System Skills</div>
+                <div class="stat-value">${SKILLS_DATA.system.length}</div>
+                <div class="stat-sub">all active</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Agents Equipped</div>
+                <div class="stat-value">${SKILLS_DATA.agents.length}</div>
+                <div class="stat-sub">with assigned skills</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-label">Pending Installs</div>
+                <div class="stat-value">${SKILLS_DATA.pending.length}</div>
+                <div class="stat-sub">${SKILLS_DATA.pending.filter(s=>s.priority==="high").length} high priority</div>
+            </div>
+        </div>
+        <div class="grid-2" style="margin-bottom:16px">
+            <div class="card">
+                <div class="card-title">System Skills</div>
+                ${systemRows}
+            </div>
+            <div class="card">
+                <div class="card-title">Agent Skills</div>
+                ${agentRows}
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-title">Pending Skills <span style="font-size:0.75rem;color:var(--text3);font-weight:400;margin-left:6px">— research &amp; install queue</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">
+                ${pendingRows}
+            </div>
+        </div>`;
+}
+
 function renderSystem(d) {
     return `
         <div class="panel-header">
@@ -4107,12 +4246,12 @@ function renderGantt(d) {
     ];
 
     // Timeline: 4 weeks back → 12 weeks forward = 16 weeks
-    const today       = new Date();
+    const today        = new Date();
     const WEEKS_BEFORE = 4;
     const WEEKS_AFTER  = 12;
     const TOTAL_WEEKS  = WEEKS_BEFORE + WEEKS_AFTER;
-    const WEEK_W       = 80;  // px per week column
-    const LABEL_W      = 220; // px for the task-name column
+    const WEEK_W       = 84;  // px per week column
+    const LABEL_W      = 230; // px for the task-name column
 
     function getMonday(dt) {
         const d2  = new Date(dt);
@@ -4130,8 +4269,10 @@ function renderGantt(d) {
         return Math.ceil((((d2 - yearStart) / 86400000) + 1) / 7);
     }
 
-    const currentMonday  = getMonday(today);
-    const timelineStart  = new Date(currentMonday);
+    const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+    const currentMonday = getMonday(today);
+    const timelineStart = new Date(currentMonday);
     timelineStart.setDate(timelineStart.getDate() - WEEKS_BEFORE * 7);
 
     // Build week descriptors
@@ -4144,10 +4285,28 @@ function renderGantt(d) {
             isCurrent: i === WEEKS_BEFORE,
             label:     `W${isoWeek(ws)}`,
             dateLabel: ws.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+            month:     ws.getMonth(),
+            year:      ws.getFullYear(),
         };
     });
 
-    // Convert a task to { left, width, hasDate } in pixels, or null if off-screen
+    // Build month band descriptors
+    const monthBands = [];
+    weeks.forEach((w, i) => {
+        const key = `${w.year}-${w.month}`;
+        if (!monthBands.length || monthBands[monthBands.length - 1].key !== key) {
+            monthBands.push({ key, label: `${MONTH_NAMES[w.month]} ${w.year}`, startIdx: i, count: 1 });
+        } else {
+            monthBands[monthBands.length - 1].count++;
+        }
+    });
+
+    // Today's exact pixel offset within the timeline
+    const msPerWeek     = 7 * 24 * 3600 * 1000;
+    const todayOffset   = (today - timelineStart) / msPerWeek;
+    const todayLineLeft = todayOffset * WEEK_W;
+
+    // Convert a task to bar position
     function barPos(task) {
         const rawDate = task.target_date || task.due_date;
         let endDate   = rawDate ? new Date(rawDate) : null;
@@ -4170,83 +4329,141 @@ function renderGantt(d) {
             }
         }
 
-        const msPerWeek   = 7 * 24 * 3600 * 1000;
+        const isOverdue   = rawDate && endDate < today && task._status !== "done";
         const startOffset = (startDate - timelineStart) / msPerWeek;
         const endOffset   = (endDate   - timelineStart) / msPerWeek;
 
-        if (endOffset <= 0 || startOffset >= TOTAL_WEEKS) return null; // completely off-screen
+        if (endOffset <= 0 || startOffset >= TOTAL_WEEKS) return null;
 
         const clampedStart = Math.max(0, startOffset);
         const clampedEnd   = Math.min(TOTAL_WEEKS, endOffset);
         return {
-            left:    clampedStart * WEEK_W,
-            width:   Math.max(WEEK_W * 0.5, (clampedEnd - clampedStart) * WEEK_W),
-            hasDate: !!rawDate,
+            left:     clampedStart * WEEK_W,
+            width:    Math.max(WEEK_W * 0.55, (clampedEnd - clampedStart) * WEEK_W),
+            hasDate:  !!rawDate,
+            isOverdue,
         };
     }
 
-    const STATUS_COLOR = { in_progress: "#3b82f6", todo: "#8b5cf6", done: "#10b981" };
-    const STATUS_LABEL = { in_progress: "In Progress", todo: "To Do", done: "Done" };
+    const STATUS_CFG = {
+        in_progress: { label: "In Progress", barClass: "gantt-bar-inprogress", pillBg: "rgba(59,130,246,0.15)",  pillColor: "#60a5fa", dotBg: "#3b82f6" },
+        todo:        { label: "To Do",        barClass: "gantt-bar-todo",        pillBg: "rgba(139,92,246,0.15)", pillColor: "#a78bfa", dotBg: "#8b5cf6" },
+        done:        { label: "Done",         barClass: "gantt-bar-done",        pillBg: "rgba(16,185,129,0.15)", pillColor: "#34d399", dotBg: "#10b981" },
+    };
 
     const weekHeaderHtml = weeks.map(w => `
-        <div class="gantt-week-hdr${w.isCurrent ? " gantt-week-now" : ""}" style="width:${WEEK_W}px">
+        <div class="gantt-week-hdr${w.isCurrent ? " gantt-week-now" : ""}" style="width:${WEEK_W}px"
+             aria-label="${w.isCurrent ? "Current week, " : ""}${w.label}, ${w.dateLabel}">
             <div class="gantt-wnum">${w.label}</div>
             <div class="gantt-wdate">${w.dateLabel}</div>
         </div>`).join("");
 
+    const monthBandHtml = monthBands.map(mb => `
+        <div class="gantt-month-cell" style="width:${mb.count * WEEK_W}px">${mb.label}</div>`).join("");
+
     const weekCols = weeks.map((w, i) =>
         `<div class="gantt-col${w.isCurrent ? " gantt-col-now" : ""}" style="left:${i * WEEK_W}px;width:${WEEK_W}px"></div>`
     ).join("");
+    const todayLine = `<div class="gantt-today-line" style="left:${todayLineLeft.toFixed(1)}px" aria-hidden="true"></div>`;
 
     let rowsHtml = "";
+    let overdueTotal = 0;
+
     for (const status of ["in_progress", "todo", "done"]) {
         const tasks = allTasks.filter(t => t._status === status);
         if (!tasks.length) continue;
 
-        const color = STATUS_COLOR[status];
+        const cfg = STATUS_CFG[status];
         rowsHtml += `
-            <div class="gantt-group-row">
+            <div class="gantt-group-row" role="rowgroup">
                 <div class="gantt-lbl" style="width:${LABEL_W}px">
-                    <span class="gantt-group-lbl">${STATUS_LABEL[status]} · ${tasks.length}</span>
+                    <div class="gantt-group-lbl-wrap">
+                        <span class="gantt-status-pill" style="background:${cfg.pillBg};color:${cfg.pillColor}">
+                            <span class="gantt-status-pill-dot" style="background:${cfg.dotBg}"></span>
+                            ${cfg.label}
+                        </span>
+                        <span class="gantt-status-count">${tasks.length}</span>
+                    </div>
                 </div>
-                <div class="gantt-bars" style="width:${TOTAL_WEEKS * WEEK_W}px">${weekCols}</div>
+                <div class="gantt-bars" style="width:${TOTAL_WEEKS * WEEK_W}px">${weekCols}${todayLine}</div>
             </div>`;
 
         for (const task of tasks) {
             const pos      = barPos(task);
-            const dueLabel = task.target_date || task.due_date
-                ? `Due: ${task.target_date || task.due_date}` : "No date set";
-            const barHtml  = pos ? `
-                <div class="gantt-bar${pos.hasDate ? "" : " gantt-bar-nodate"}"
-                     style="left:${pos.left}px;width:${pos.width}px;background:${color}"
-                     title="${escHtml(task.title)} — ${dueLabel}">
+            const rawDate  = task.target_date || task.due_date;
+            const dueLabel = rawDate ? `Due: ${rawDate}` : "No date set";
+            const isOverdue = pos && pos.isOverdue;
+            if (isOverdue) overdueTotal++;
+
+            let barClass = cfg.barClass;
+            if (isOverdue)        barClass = "gantt-bar-overdue";
+            if (pos && !pos.hasDate) barClass += " gantt-bar-nodate";
+
+            const barHtml = pos ? `
+                <div class="gantt-bar ${barClass}"
+                     style="left:${pos.left.toFixed(1)}px;width:${pos.width.toFixed(1)}px"
+                     role="img"
+                     aria-label="${escHtml(task.title)} — ${dueLabel}${isOverdue ? " (Overdue)" : ""}"
+                     tabindex="0"
+                     title="${escHtml(task.title)} — ${dueLabel}${isOverdue ? " ⚠ Overdue" : ""}">
                     <span class="gantt-bar-lbl">${escHtml(task.title)}</span>
                 </div>` : "";
 
             rowsHtml += `
-                <div class="gantt-task-row">
+                <div class="gantt-task-row${isOverdue ? " is-overdue" : ""}" role="row">
                     <div class="gantt-lbl" style="width:${LABEL_W}px">
                         <span class="gantt-task-name" title="${escHtml(task.title)}">${escHtml(task.title)}</span>
-                        <span class="gantt-task-who">${escHtml(task.assignee || "")}</span>
+                        <span class="gantt-task-who">${escHtml(task.assignee || "\u2014")}</span>
                     </div>
                     <div class="gantt-bars" style="width:${TOTAL_WEEKS * WEEK_W}px">
-                        ${weekCols}${barHtml}
+                        ${weekCols}${todayLine}${barHtml}
                     </div>
                 </div>`;
         }
     }
 
-    const totalWidth = LABEL_W + TOTAL_WEEKS * WEEK_W;
+    const totalWidth   = LABEL_W + TOTAL_WEEKS * WEEK_W;
+    const overdueBadge = overdueTotal > 0
+        ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:2px 8px;background:rgba(239,68,68,0.15);color:#fca5a5;border-radius:99px;font-size:0.7rem;font-weight:700;margin-left:8px">
+               <span style="width:6px;height:6px;border-radius:50%;background:#ef4444;display:inline-block;flex-shrink:0"></span>
+               ${overdueTotal} overdue
+           </span>` : "";
+
+    const todayScrollLeft = Math.round(todayLineLeft);
+
     return `
         <div class="panel-header">
             <div>
-                <div class="panel-title">Timeline</div>
-                <div class="panel-subtitle">Week-by-week Gantt view · ${allTasks.length} tasks · today = W${isoWeek(today)}</div>
+                <div class="panel-title" style="display:flex;align-items:center;gap:0">
+                    Timeline${overdueBadge}
+                </div>
+                <div class="panel-subtitle">${allTasks.length} tasks across ${TOTAL_WEEKS} weeks &middot; Today is W${isoWeek(today)}, ${today.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"})}</div>
             </div>
-            <button class="btn btn-ghost" onclick="navigate('tasks')" style="font-size:0.82rem">← Kanban</button>
+            <button class="btn btn-ghost" onclick="navigate('tasks')" style="font-size:0.82rem">&#8592; Kanban</button>
         </div>
-        <div class="gantt-wrap">
+
+        <div class="gantt-toolbar">
+            <div class="gantt-toolbar-left">
+                <button class="gantt-today-btn" id="gantt-scroll-today" aria-label="Jump to today">
+                    <span class="gantt-today-indicator"></span>
+                    Jump to Today
+                </button>
+            </div>
+            <div class="gantt-legend" role="list" aria-label="Status legend">
+                <span class="gantt-legend-item" role="listitem"><span class="gantt-legend-dot" style="background:linear-gradient(135deg,#3b82f6,#2563eb)"></span>In Progress</span>
+                <span class="gantt-legend-item" role="listitem"><span class="gantt-legend-dot" style="background:linear-gradient(135deg,#8b5cf6,#7c3aed)"></span>To Do</span>
+                <span class="gantt-legend-item" role="listitem"><span class="gantt-legend-dot" style="background:linear-gradient(135deg,#10b981,#059669)"></span>Done</span>
+                <span class="gantt-legend-item" role="listitem"><span class="gantt-legend-dot" style="background:linear-gradient(135deg,#ef4444,#dc2626)"></span>Overdue</span>
+                <span class="gantt-legend-item" role="listitem"><span class="gantt-legend-dot" style="background:repeating-linear-gradient(-45deg,transparent,transparent 3px,rgba(255,255,255,0.2) 3px,rgba(255,255,255,0.2) 6px);background-color:#555"></span>No date</span>
+            </div>
+        </div>
+
+        <div class="gantt-wrap" id="gantt-scroll-container" role="grid" aria-label="Project timeline Gantt chart">
             <div class="gantt-inner" style="min-width:${totalWidth}px">
+                <div class="gantt-month-row">
+                    <div class="gantt-month-lbl-spacer" style="width:${LABEL_W}px;height:25px"></div>
+                    <div style="display:flex;flex-shrink:0">${monthBandHtml}</div>
+                </div>
                 <div class="gantt-head-row">
                     <div class="gantt-head-lbl" style="width:${LABEL_W}px">Task</div>
                     <div class="gantt-head-weeks" style="width:${TOTAL_WEEKS * WEEK_W}px;display:flex">
@@ -4255,8 +4472,10 @@ function renderGantt(d) {
                 </div>
                 <div class="gantt-body">${rowsHtml}</div>
             </div>
-        </div>`;
+        </div>
+        <span data-gantt-today-px="${todayScrollLeft.toFixed(0)}" data-gantt-label-w="${LABEL_W}" style="display:none"></span>`;
 }
+
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Panel map
@@ -4276,6 +4495,7 @@ const PANELS = {
     office:    { fn: renderOffice,    endpoint: "office",   init: initOfficePanel  },
     team:      { fn: renderTeam,      endpoint: "team"                             },
     system:    { fn: renderSystem,    endpoint: "system",   init: initSystemPanel  },
+    skills:    { fn: renderSkills,    endpoint: null                               },
     radar:     { fn: renderRadar,     endpoint: "radar"                            },
     factory:   { fn: renderFactory,   endpoint: "factory",  init: initFactoryPanel },
     pipeline:  { fn: renderPipeline,  endpoint: "pipeline"                         },
