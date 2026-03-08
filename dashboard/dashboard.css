@@ -239,6 +239,48 @@ body {
 .project-card:hover { border-color: var(--blue); background: var(--bg2); }
 .project-card:active { transform: scale(0.995); }
 
+/* ── Project Hierarchy Tree ── */
+.project-subcard {
+    background: var(--bg2);
+    border-color: rgba(255,255,255,0.05);
+    padding: 14px;
+}
+.project-subcard:hover { border-color: var(--blue); background: var(--bg3); }
+
+.tree-children {
+    display: none;
+    overflow: hidden;
+    animation: none;
+}
+.tree-children.open {
+    display: block;
+    animation: treeSlideDown 0.18s ease;
+}
+@keyframes treeSlideDown {
+    from { opacity: 0; transform: translateY(-6px); }
+    to   { opacity: 1; transform: translateY(0);    }
+}
+
+.tree-toggle-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text2);
+    cursor: pointer;
+    font-size: 0.6rem;
+    width: 18px; height: 18px;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
+    padding: 0;
+}
+.tree-toggle-btn:hover { border-color: var(--blue); color: var(--blue2); background: rgba(59,130,246,0.08); }
+.tree-toggle-btn.expanded { color: var(--blue2); border-color: var(--blue); }
+
+.tree-leaf-indent { width: 18px; height: 18px; display: inline-block; flex-shrink: 0; }
+
+.project-tree-item { position: relative; }
+
 .card-title {
     font-size: 0.78rem;
     font-weight: 600;

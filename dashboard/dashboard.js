@@ -1590,23 +1590,49 @@ function showCronModal(job, jobId) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Projects — clickable cards with drill-down modal
+// Projects — hierarchical tree with expand/collapse + drill-down modal
 // ──────────────────────────────────────────────────────────────────────────────
-function renderProjects(d) {
-    const statusColor = s => s==="green"?"green":s==="yellow"?"yellow":"red";
+
+// Assign stable path-based IDs to every node in the tree
+function _assignTreeIds(projects, prefix) {
+    projects.forEach((p, i) => {
+        p._treeId = prefix ? `${prefix}-${i}` : String(i);
+        if (p.children && p.children.length) _assignTreeIds(p.children, p._treeId);
+    });
+}
+
+// Build a flat id→project lookup map
+function _buildProjectMap(projects, map) {
+    projects.forEach(p => {
+        map[p._treeId] = p;
+        if (p.children && p.children.length) _buildProjectMap(p.children, map);
+    });
+}
+
+// Recursive card renderer — depth 0 = top-level, 1 = sub-project, 2 = task
+function _renderProjectCard(p, depth) {
+    const statusColor = s => s === "green" ? "green" : s === "yellow" ? "yellow" : s === "blue" ? "blue" : "red";
+    const hasChildren = p.children && p.children.length > 0;
+    const indentPx    = depth * 28;
+    const fontSize    = depth === 0 ? "0.95rem" : "0.88rem";
+    const emojiSize   = depth === 0 ? "1.3rem"  : "1.05rem";
+    const mb          = depth === 0 ? "12px"    : "6px";
+
     return `
-        <div class="panel-header">
-            <div class="panel-title">🗂️ Projects</div>
-            <div class="panel-subtitle">${d.projects.length} active projects · click a card to drill down</div>
-        </div>
-        ${d.projects.map((p, i) => `
-            <div class="card project-card" data-project-idx="${i}" style="margin-bottom:12px;cursor:pointer" title="Click to view details">
+        <div class="project-tree-item" data-tree-id="${p._treeId}" data-depth="${depth}">
+            <div class="card project-card${depth > 0 ? " project-subcard" : ""}"
+                 data-tree-id="${p._treeId}"
+                 style="margin-bottom:${mb};cursor:pointer${depth > 0 ? `;margin-left:${indentPx}px` : ""}"
+                 title="Click to view details">
                 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
-                    <div style="display:flex;align-items:center;gap:10px">
-                        <span style="font-size:1.3rem">${p.emoji}</span>
+                    <div style="display:flex;align-items:center;gap:8px">
+                        ${hasChildren
+                            ? `<button class="tree-toggle-btn" data-tree-id="${p._treeId}" title="Expand / collapse">▶</button>`
+                            : `<span class="tree-leaf-indent"></span>`}
+                        <span style="font-size:${emojiSize}">${p.emoji || "📁"}</span>
                         <div>
-                            <div style="font-weight:700;color:#fff;font-size:0.95rem">${escHtml(p.name)}</div>
-                            <div style="font-size:0.78rem;color:var(--text2);margin-top:2px">${escHtml(p.phase)}</div>
+                            <div style="font-weight:700;color:#fff;font-size:${fontSize}">${escHtml(p.name)}</div>
+                            ${p.phase ? `<div style="font-size:0.78rem;color:var(--text2);margin-top:2px">${escHtml(p.phase)}</div>` : ""}
                         </div>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
@@ -1614,20 +1640,73 @@ function renderProjects(d) {
                         <span style="font-size:0.75rem;color:var(--text3)">›</span>
                     </div>
                 </div>
-                ${progressBar(p.progress)}
+                ${progressBar(p.progress || 0)}
+                ${(p.details || p.owner) ? `
                 <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:0.78rem;color:var(--text3)">
-                    <span>${escHtml(p.details)}</span>
-                    <span>👤 ${p.owner}</span>
-                </div>
-            </div>`).join("")}`;
+                    <span>${escHtml(p.details || "")}</span>
+                    ${p.owner ? `<span>👤 ${escHtml(p.owner)}</span>` : ""}
+                </div>` : ""}
+            </div>
+            ${hasChildren ? `
+                <div class="tree-children" id="tree-children-${p._treeId}">
+                    ${p.children.map(child => _renderProjectCard(child, depth + 1)).join("")}
+                </div>` : ""}
+        </div>`;
+}
+
+function renderProjects(d) {
+    // Demo: give "Mission Control Dashboard" sub-projects if the API doesn't provide them
+    const mcd = d.projects.find(p => p.name && p.name.toLowerCase().includes("mission control"));
+    if (mcd && !mcd.children) {
+        mcd.children = [
+            { emoji: "🎨", name: "Phase 1: UI Foundation",  phase: "Complete",    status: "green",  label: "done",        progress: 100, details: "Layout, nav, panels, dark theme",  owner: mcd.owner },
+            { emoji: "⚡", name: "Phase 2: Live Data",       phase: "In Progress", status: "blue",   label: "in progress", progress: 68,  details: "API endpoints, real-time feeds",    owner: mcd.owner, children: [
+                { emoji: "🔌", name: "API Integrations",      phase: "Building",    status: "blue",   label: "building",    progress: 75,  details: "Binance, Telegram, GitHub hooks",  owner: mcd.owner },
+                { emoji: "🔄", name: "WebSocket Live Feed",   phase: "Planned",     status: "yellow", label: "pending",     progress: 20,  details: "Real-time push updates",           owner: mcd.owner },
+            ]},
+            { emoji: "🚀", name: "Phase 3: Deployment",      phase: "Planned",     status: "yellow", label: "upcoming",    progress: 0,   details: "Cloudflare Workers + DNS setup",   owner: mcd.owner },
+        ];
+    }
+
+    _assignTreeIds(d.projects);
+    window._projectTreeMap = {};
+    _buildProjectMap(d.projects, window._projectTreeMap);
+
+    const topCount = d.projects.length;
+    const totalCount = Object.keys(window._projectTreeMap).length;
+    const subtitle = topCount === totalCount
+        ? `${topCount} active projects · click a card to drill down`
+        : `${topCount} projects · ${totalCount - topCount} sub-items · click to drill down · ▶ to expand`;
+
+    return `
+        <div class="panel-header">
+            <div class="panel-title">🗂️ Projects</div>
+            <div class="panel-subtitle">${subtitle}</div>
+        </div>
+        ${d.projects.map(p => _renderProjectCard(p, 0)).join("")}`;
 }
 
 function initProjectsPanel(data, el) {
+    // Expand / collapse toggle buttons
+    el.querySelectorAll(".tree-toggle-btn").forEach(btn => {
+        btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const treeId  = btn.dataset.treeId;
+            const children = el.querySelector(`#tree-children-${treeId}`);
+            if (!children) return;
+            const expanded = children.classList.toggle("open");
+            btn.textContent   = expanded ? "▼" : "▶";
+            btn.classList.toggle("expanded", expanded);
+        });
+    });
+
+    // Card click → drill-down (project-card, not the toggle button)
     el.querySelectorAll(".project-card").forEach(card => {
         card.addEventListener("click", () => {
-            const idx = parseInt(card.dataset.projectIdx, 10);
-            const project = data.projects[idx];
-            console.log(`[Projects] card clicked — idx=${idx}, name="${project?.name}"`);
+            const treeId  = card.dataset.treeId;
+            const project = window._projectTreeMap?.[treeId];
+            if (!project) return;
+            console.log(`[Projects] card clicked — treeId=${treeId}, name="${project.name}"`);
             renderProjectDetail(project);
         });
     });
