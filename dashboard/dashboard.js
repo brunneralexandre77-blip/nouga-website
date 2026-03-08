@@ -198,7 +198,7 @@ function toggleNotifDrawer() {
 // API helpers
 // ──────────────────────────────────────────────────────────────────────────────
 async function fetchData(endpoint) {
-    const res = await fetch(`${API}/${endpoint}`, { signal: AbortSignal.timeout(8000) });
+    const res = await fetch(`${API}/${endpoint}`, { credentials: "include", signal: AbortSignal.timeout(8000) });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const json = await res.json();
     if (!json.success) throw new Error(json.error || "API error");
@@ -210,6 +210,7 @@ async function apiPost(endpoint, body) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        credentials: "include",
         signal: AbortSignal.timeout(8000),
     });
     const json = await res.json();
@@ -222,6 +223,7 @@ async function apiPut(endpoint, body) {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
+        credentials: "include",
         signal: AbortSignal.timeout(8000),
     });
     const json = await res.json();
@@ -1551,17 +1553,17 @@ function showCronModal(job, jobId) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Projects (unchanged)
+// Projects — clickable cards with drill-down modal
 // ──────────────────────────────────────────────────────────────────────────────
 function renderProjects(d) {
     const statusColor = s => s==="green"?"green":s==="yellow"?"yellow":"red";
     return `
         <div class="panel-header">
             <div class="panel-title">🗂️ Projects</div>
-            <div class="panel-subtitle">${d.projects.length} active projects</div>
+            <div class="panel-subtitle">${d.projects.length} active projects · click a card to drill down</div>
         </div>
-        ${d.projects.map(p => `
-            <div class="card" style="margin-bottom:12px">
+        ${d.projects.map((p, i) => `
+            <div class="card project-card" data-project-idx="${i}" style="margin-bottom:12px;cursor:pointer" title="Click to view details">
                 <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
                     <div style="display:flex;align-items:center;gap:10px">
                         <span style="font-size:1.3rem">${p.emoji}</span>
@@ -1570,7 +1572,10 @@ function renderProjects(d) {
                             <div style="font-size:0.78rem;color:var(--text2);margin-top:2px">${escHtml(p.phase)}</div>
                         </div>
                     </div>
-                    ${badge(p.label, statusColor(p.status))}
+                    <div style="display:flex;align-items:center;gap:8px">
+                        ${badge(p.label, statusColor(p.status))}
+                        <span style="font-size:0.75rem;color:var(--text3)">›</span>
+                    </div>
                 </div>
                 ${progressBar(p.progress)}
                 <div style="display:flex;justify-content:space-between;margin-top:10px;font-size:0.78rem;color:var(--text3)">
@@ -1578,6 +1583,129 @@ function renderProjects(d) {
                     <span>👤 ${p.owner}</span>
                 </div>
             </div>`).join("")}`;
+}
+
+function initProjectsPanel(data, el) {
+    el.querySelectorAll(".project-card").forEach(card => {
+        card.addEventListener("click", () => {
+            const idx = parseInt(card.dataset.projectIdx, 10);
+            openProjectDrilldown(data.projects[idx]);
+        });
+    });
+}
+
+async function openProjectDrilldown(project) {
+    const statusColor = s => s==="green"?"green":s==="yellow"?"yellow":"red";
+
+    const overlay = createModal({
+        title: `${project.emoji} ${escHtml(project.name)}`,
+        body: `<div id="proj-drill-body"><div class="loading"><div class="spinner"></div> Loading…</div></div>`,
+        footer: `<button class="btn btn-ghost" id="proj-drill-close">Close</button>`,
+    });
+    overlay.querySelector(".modal").style.width = "640px";
+    overlay.querySelector("#proj-drill-close").onclick = () => overlay.remove();
+
+    const drillBody = overlay.querySelector("#proj-drill-body");
+
+    try {
+        const tasksData = await fetchData("tasks");
+        const allTasks = [
+            ...(tasksData.todo        || []),
+            ...(tasksData.in_progress || []),
+            ...(tasksData.done        || []),
+        ];
+
+        // Match tasks to this project by tag or project field
+        const projKey = project.name.toLowerCase();
+        const related = allTasks.filter(t => {
+            const tag = (t.tag || "").toLowerCase().replace(/^#/, "");
+            const proj = (t.project || "").toLowerCase();
+            return tag && (tag.includes(projKey) || projKey.includes(tag))
+                || proj && (proj.includes(projKey) || projKey.includes(proj));
+        });
+
+        // Group related tasks by tag/phase
+        const phaseMap = {};
+        related.forEach(t => {
+            const key = t.tag || project.phase || "General";
+            if (!phaseMap[key]) phaseMap[key] = { todo: [], in_progress: [], done: [], target: t.target_date || t.due_date || null };
+            phaseMap[key][t.status] = phaseMap[key][t.status] || [];
+            phaseMap[key][t.status].push(t);
+        });
+
+        // Build phases section — prefer explicit phases array on project if present
+        let phasesHtml = "";
+        const explicitPhases = project.phases || project.steps;
+        if (explicitPhases && explicitPhases.length) {
+            phasesHtml = explicitPhases.map(ph => {
+                const pct  = ph.progress ?? ph.completion ?? 0;
+                const name = ph.name || ph.title || ph.phase || "Phase";
+                const date = ph.target_date || ph.due_date || ph.date || null;
+                const stat = ph.status || (pct >= 100 ? "done" : pct > 0 ? "in_progress" : "todo");
+                return `
+                <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <div style="font-weight:600;font-size:0.88rem">${escHtml(name)}</div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            ${date ? `<span style="font-size:0.75rem;color:var(--text3)">📅 ${escHtml(String(date))}</span>` : ""}
+                            ${statusBadge(stat)}
+                        </div>
+                    </div>
+                    ${progressBar(pct)}
+                </div>`;
+            }).join("");
+        } else if (Object.keys(phaseMap).length) {
+            phasesHtml = Object.entries(phaseMap).map(([phase, tasks]) => {
+                const total = (tasks.todo?.length||0) + (tasks.in_progress?.length||0) + (tasks.done?.length||0);
+                const done  = tasks.done?.length || 0;
+                const inProg = tasks.in_progress?.length || 0;
+                const pct   = total ? Math.round(done / total * 100) : 0;
+                const date  = tasks.target;
+                return `
+                <div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:8px">
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                        <div style="font-weight:600;font-size:0.88rem">${escHtml(phase)}</div>
+                        <div style="display:flex;align-items:center;gap:8px">
+                            ${date ? `<span style="font-size:0.75rem;color:var(--text3)">📅 ${escHtml(String(date))}</span>` : ""}
+                            ${statusBadge(pct >= 100 ? "done" : inProg ? "in_progress" : "pending")}
+                        </div>
+                    </div>
+                    ${progressBar(pct)}
+                    <div style="margin-top:6px;font-size:0.75rem;color:var(--text3)">
+                        ${done}/${total} tasks done${inProg ? ` · ${inProg} in progress` : ""}
+                    </div>
+                </div>`;
+            }).join("");
+        } else {
+            phasesHtml = `<div style="color:var(--text2);font-size:0.85rem">No tasks linked to this project yet.</div>`;
+        }
+
+        drillBody.innerHTML = `
+            <div style="display:flex;align-items:center;gap:10px">
+                ${statusBadge(project.label || project.status)}
+                <span style="font-size:0.82rem;color:var(--text2)">👤 ${escHtml(project.owner)}</span>
+                ${project.target_date ? `<span style="font-size:0.82rem;color:var(--text3)">📅 ${escHtml(String(project.target_date))}</span>` : ""}
+            </div>
+            ${(project.description || project.details) ? `
+            <div>
+                <div class="form-label" style="margin-bottom:6px">Description</div>
+                <div style="font-size:0.88rem;color:var(--text2);line-height:1.6">${escHtml(project.description || project.details)}</div>
+            </div>` : ""}
+            <div>
+                <div class="form-label" style="margin-bottom:8px">Overall Progress</div>
+                ${progressBar(project.progress)}
+            </div>
+            <div>
+                <div class="form-label" style="margin-bottom:8px">Current Phase</div>
+                <div style="font-size:0.88rem;color:var(--text)">${escHtml(project.phase)}</div>
+            </div>
+            <div>
+                <div class="form-label" style="margin-bottom:10px">Phases &amp; Sub-steps</div>
+                ${phasesHtml}
+            </div>`;
+    } catch(e) {
+        drillBody.innerHTML = errorBox(`Failed to load details: ${e.message}`);
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -3576,7 +3704,7 @@ const PANELS = {
     approvals: { fn: renderApprovals, endpoint: "approvals"                        },
     council:   { fn: renderCouncil,   endpoint: "council",  init: initCouncilPanel },
     calendar:  { fn: renderCalendar,  endpoint: "calendar", init: initCalendarPanel},
-    projects:  { fn: renderProjects,  endpoint: "projects"                         },
+    projects:  { fn: renderProjects,  endpoint: "projects", init: initProjectsPanel },
     memory:    { fn: renderMemory,    endpoint: "memory"                           },
     docs:      { fn: renderDocs,      endpoint: "docs"                             },
     people:    { fn: renderPeople,    endpoint: "people"                           },
