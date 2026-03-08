@@ -198,10 +198,34 @@ function toggleNotifDrawer() {
 // API helpers
 // ──────────────────────────────────────────────────────────────────────────────
 async function fetchData(endpoint) {
-    const res = await fetch(`${API}/${endpoint}`, { credentials: "include", signal: AbortSignal.timeout(8000) });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error || "API error");
+    let res;
+    try {
+        res = await fetch(`${API}/${endpoint}`, { credentials: "include", signal: AbortSignal.timeout(8000) });
+    } catch (netErr) {
+        const msg = netErr.name === "TimeoutError"
+            ? `Timeout fetching /${endpoint} (>8s)`
+            : `Network error fetching /${endpoint}: ${netErr.message}`;
+        console.error(`[fetchData] ${msg}`, netErr);
+        throw new Error(msg);
+    }
+    if (!res.ok) {
+        const msg = `HTTP ${res.status} ${res.statusText} from /${endpoint}`;
+        console.error(`[fetchData] ${msg}`);
+        throw new Error(msg);
+    }
+    let json;
+    try {
+        json = await res.json();
+    } catch (parseErr) {
+        const msg = `Invalid JSON from /${endpoint}: ${parseErr.message}`;
+        console.error(`[fetchData] ${msg}`);
+        throw new Error(msg);
+    }
+    if (!json.success) {
+        const msg = json.error || "API error";
+        console.error(`[fetchData] /${endpoint} returned success=false:`, msg);
+        throw new Error(msg);
+    }
     return json.data;
 }
 
@@ -1589,7 +1613,7 @@ function initProjectsPanel(data, el) {
     el.querySelectorAll(".project-card").forEach(card => {
         card.addEventListener("click", () => {
             const idx = parseInt(card.dataset.projectIdx, 10);
-            openProjectDrilldown(data.projects[idx]);
+            renderProjectDetail(data.projects[idx]);
         });
     });
 }
@@ -1706,6 +1730,476 @@ async function openProjectDrilldown(project) {
     } catch(e) {
         drillBody.innerHTML = errorBox(`Failed to load details: ${e.message}`);
     }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Project Detail — Gantt Chart View
+// ──────────────────────────────────────────────────────────────────────────────
+
+const GANTT_DAY_W = 28; // pixels per day
+
+let _ganttProject = null;
+let _ganttTasks   = [];
+let _ganttStartMs = 0;
+let _ganttDragging = null; // { taskIdx, side, startX, origLeft, origWidth }
+
+/** Assign synthetic dates to tasks that lack them */
+function _ganttAssignDates(tasks, project) {
+    const today = new Date();
+    const pStart = project.start_date ? new Date(project.start_date)
+                 : new Date(today.getFullYear(), today.getMonth() - 1, 1);
+    const pEnd   = project.target_date ? new Date(project.target_date)
+                 : new Date(today.getFullYear(), today.getMonth() + 2, 0);
+    const totalDays = Math.max(14, Math.round((pEnd - pStart) / 86400000));
+    const slotDays  = Math.max(7, Math.round(totalDays / Math.max(tasks.length, 1)));
+
+    tasks.forEach((t, i) => {
+        if (!t.start_date && !t._start) {
+            const s = new Date(pStart);
+            s.setDate(s.getDate() + i * slotDays);
+            t._start = s.toISOString().slice(0, 10);
+        } else {
+            t._start = t.start_date || t._start;
+        }
+        if (!t.due_date && !t.end_date && !t._end) {
+            const s = new Date(t._start);
+            s.setDate(s.getDate() + slotDays);
+            t._end = s.toISOString().slice(0, 10);
+        } else {
+            t._end = t.due_date || t.end_date || t._end;
+        }
+    });
+}
+
+/** Build timeline bounds from tasks */
+function _ganttBounds(tasks) {
+    let minMs = Infinity, maxMs = -Infinity;
+    tasks.forEach(t => {
+        const s = new Date(t._start || t.start_date || Date.now()).getTime();
+        const e = new Date(t._end   || t.due_date   || t.end_date || Date.now()).getTime();
+        if (s < minMs) minMs = s;
+        if (e > maxMs) maxMs = e;
+    });
+    // pad 7 days on each side
+    minMs -= 7 * 86400000;
+    maxMs += 7 * 86400000;
+    return { minMs, maxMs, totalDays: Math.ceil((maxMs - minMs) / 86400000) };
+}
+
+/** Render the full project detail / Gantt view into panel-projects */
+async function renderProjectDetail(project) {
+    const el = $("panel-projects");
+    el.innerHTML = `<div class="gantt-view"><div class="gantt-view-header">
+        <button class="btn btn-ghost" id="gantt-back">← Projects</button>
+        <div class="gantt-view-title">
+            <span style="font-size:1.3rem">${escHtml(project.emoji || "🗂️")}</span>
+            <div>
+                <div style="font-weight:700;font-size:1rem">${escHtml(project.name)}</div>
+                <div style="font-size:0.78rem;color:var(--text2)">${escHtml(project.phase || "")}</div>
+            </div>
+        </div>
+        <div class="gantt-legend">
+            <span class="gantt-legend-dot" style="background:#3a3a3a"></span><span>Not started</span>
+            <span class="gantt-legend-dot" style="background:var(--blue)"></span><span>In progress</span>
+            <span class="gantt-legend-dot" style="background:var(--green)"></span><span>Done</span>
+        </div>
+        <div style="min-width:160px">${progressBar(project.progress)}</div>
+    </div>
+    <div id="gantt-body" style="flex:1;overflow:auto;position:relative">
+        <div class="loading"><div class="spinner"></div> Loading tasks…</div>
+    </div></div>`;
+
+    $("gantt-back").onclick = () => loadPanel("projects");
+
+    try {
+        const tasksData = await fetchData("tasks");
+        const allTasks = [
+            ...(tasksData.todo        || []),
+            ...(tasksData.in_progress || []),
+            ...(tasksData.done        || []),
+        ];
+        const projKey = project.name.toLowerCase();
+        let tasks = allTasks.filter(t => {
+            const tag  = (t.tag     || "").toLowerCase().replace(/^#/, "");
+            const proj = (t.project || "").toLowerCase();
+            return (tag  && (tag.includes(projKey)  || projKey.includes(tag)))
+                || (proj && (proj.includes(projKey) || projKey.includes(proj)));
+        });
+
+        // If no matched tasks, fall back to phases as virtual tasks
+        if (tasks.length === 0 && (project.phases || project.steps)) {
+            const phases = project.phases || project.steps;
+            tasks = phases.map((ph, i) => ({
+                id:        `phase-${i}`,
+                title:     ph.name || ph.title || `Phase ${i + 1}`,
+                status:    ph.status || (ph.progress >= 100 ? "done" : ph.progress > 0 ? "in_progress" : "todo"),
+                progress:  ph.progress ?? 0,
+                start_date: ph.start_date || null,
+                due_date:  ph.target_date || ph.due_date || null,
+                assigned_to: project.owner,
+            }));
+        }
+
+        _ganttProject = project;
+        _ganttTasks   = tasks;
+        _ganttAssignDates(tasks, project);
+
+        const ganttBody = $("gantt-body");
+        if (tasks.length === 0) {
+            ganttBody.innerHTML = `<div class="gantt-empty"><span style="font-size:2rem">📭</span>No tasks linked to this project yet.</div>`;
+            return;
+        }
+        ganttBody.innerHTML = renderGanttChart(tasks);
+        initGanttInteractions();
+    } catch(e) {
+        $("gantt-body").innerHTML = errorBox(`Failed to load tasks: ${e.message}`);
+    }
+}
+
+/** Render the Gantt chart HTML */
+function renderGanttChart(tasks) {
+    const { minMs, totalDays } = _ganttBounds(tasks);
+    _ganttStartMs = minMs;
+    const totalW  = totalDays * GANTT_DAY_W;
+    const today   = Date.now();
+
+    // --- build timeline header ---
+    const startDate = new Date(minMs);
+    startDate.setHours(0, 0, 0, 0);
+
+    // Month row
+    let monthHtml = "";
+    {
+        let cur = new Date(startDate);
+        while (cur.getTime() < minMs + totalDays * 86400000) {
+            const monthStart = new Date(cur.getFullYear(), cur.getMonth(), 1);
+            const monthEnd   = new Date(cur.getFullYear(), cur.getMonth() + 1, 1);
+            const clampStart = Math.max(monthStart.getTime(), startDate.getTime());
+            const clampEnd   = Math.min(monthEnd.getTime(), startDate.getTime() + totalDays * 86400000);
+            const dayOff  = Math.round((clampStart - startDate.getTime()) / 86400000);
+            const daySpan = Math.max(1, Math.round((clampEnd - clampStart) / 86400000));
+            const left    = dayOff * GANTT_DAY_W;
+            const width   = daySpan * GANTT_DAY_W;
+            const label   = cur.toLocaleString("default", { month: "short", year: "2-digit" });
+            monthHtml += `<div class="gantt-month-label" style="left:${left}px;width:${width}px">${escHtml(label)}</div>`;
+            cur = monthEnd;
+        }
+    }
+
+    // Week/day row — show week numbers for spans > 60 days, else day numbers
+    const showDays = totalDays <= 60;
+    let dayHtml = "";
+    for (let d = 0; d < totalDays; d++) {
+        const ts = startDate.getTime() + d * 86400000;
+        const dt = new Date(ts);
+        const isToday = Math.abs(ts - today) < 86400000 / 2;
+        if (showDays) {
+            const lbl = dt.getDate();
+            dayHtml += `<div class="gantt-day-label${isToday ? " today" : ""}" style="left:${d * GANTT_DAY_W}px;width:${GANTT_DAY_W}px">${lbl}</div>`;
+        } else if (dt.getDay() === 1) { // Monday = week start
+            const weekNum = Math.ceil(d / 7) + 1;
+            dayHtml += `<div class="gantt-day-label" style="left:${d * GANTT_DAY_W}px;width:${7 * GANTT_DAY_W}px">W${weekNum}</div>`;
+        }
+    }
+
+    // Today line offset
+    const todayOff = Math.round((today - minMs) / 86400000);
+    const todayLeft = todayOff * GANTT_DAY_W;
+
+    // --- build task rows ---
+    let rowsHtml = "";
+    tasks.forEach((t, i) => {
+        const taskStart = new Date(t._start || t.start_date || today).getTime();
+        const taskEnd   = new Date(t._end   || t.due_date   || t.end_date || today).getTime();
+        const durDays   = Math.max(1, Math.round((taskEnd - taskStart) / 86400000));
+        const leftDays  = Math.round((taskStart - minMs) / 86400000);
+        const barLeft   = leftDays * GANTT_DAY_W;
+        const barWidth  = Math.max(GANTT_DAY_W, durDays * GANTT_DAY_W);
+        const pct       = Math.min(100, Math.max(0, t.progress ?? 0));
+        const status    = t.status || "todo";
+        const statusCls = status === "done" ? "status-done"
+                        : status === "in_progress" ? "status-in_progress"
+                        : "status-todo";
+
+        const startStr = new Date(t._start || t.start_date || today).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+        const endStr   = new Date(t._end   || t.due_date   || t.end_date || today).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+        const title    = escHtml(t.title || t.name || "Untitled");
+
+        rowsHtml += `
+        <div class="gantt-row" data-task-idx="${i}">
+            <div class="gantt-task-cell" data-task-idx="${i}" title="Click to edit">
+                <div class="gantt-task-name" title="${title}">${title}</div>
+                <div class="gantt-task-date">${startStr}</div>
+                <div class="gantt-task-date">${endStr}</div>
+                <div class="gantt-task-pct">${pct}%</div>
+            </div>
+            <div class="gantt-bar-track" style="--day-w:${GANTT_DAY_W}px;min-width:${totalW}px">
+                ${todayOff >= 0 && todayOff <= totalDays ? `<div class="gantt-today-line" style="left:${todayLeft}px"></div>` : ""}
+                <div class="gantt-bar ${statusCls}" data-task-idx="${i}"
+                     style="left:${barLeft}px;width:${barWidth}px"
+                     title="${title} · ${pct}%">
+                    <div class="gantt-bar-progress" style="width:${pct}%"></div>
+                    <div class="gantt-drag-handle handle-left"  data-side="left"  data-task-idx="${i}"></div>
+                    <div class="gantt-bar-label">${barWidth > 60 ? title : ""}</div>
+                    <div class="gantt-drag-handle handle-right" data-side="right" data-task-idx="${i}"></div>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    // --- dependency arrows SVG ---
+    const rowH = 44;
+    const svgH = tasks.length * rowH;
+    const headerH = 60; // gantt-header-row height
+
+    let arrowDefs = `<defs><marker id="gantt-arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto"><path d="M0,0 L0,6 L6,3 z" fill="rgba(139,92,246,0.7)"/></marker></defs>`;
+    let arrowPaths = "";
+    tasks.forEach((t, i) => {
+        const deps = t.depends_on || t.dependencies || [];
+        deps.forEach(depId => {
+            const depIdx = tasks.findIndex(d => d.id === depId || String(d.id) === String(depId));
+            if (depIdx < 0) return;
+            const depTask   = tasks[depIdx];
+            const depEndMs  = new Date(depTask._end || depTask.due_date || depTask.end_date || Date.now()).getTime();
+            const thisStartMs = new Date(t._start || t.start_date || Date.now()).getTime();
+            const x1 = 340 + Math.round((depEndMs - minMs) / 86400000) * GANTT_DAY_W;
+            const y1 = depIdx * rowH + rowH / 2;
+            const x2 = 340 + Math.round((thisStartMs - minMs) / 86400000) * GANTT_DAY_W;
+            const y2 = i * rowH + rowH / 2;
+            const mx = (x1 + x2) / 2;
+            arrowPaths += `<path class="gantt-dep-arrow" d="M${x1},${y1} C${mx},${y1} ${mx},${y2} ${x2},${y2}" marker-end="url(#gantt-arrowhead)"/>`;
+        });
+    });
+
+    return `
+    <div class="gantt-inner" style="min-width:${340 + totalW}px">
+        <div class="gantt-header-row">
+            <div class="gantt-col-header" style="background:var(--bg1)">
+                <span>Task</span><span style="text-align:center">Start</span>
+                <span style="text-align:center">End</span><span style="text-align:center">%</span>
+            </div>
+            <div class="gantt-timeline-header" style="width:${totalW}px;flex-shrink:0">
+                <div class="gantt-month-row" style="width:${totalW}px">${monthHtml}</div>
+                <div class="gantt-day-row"   style="width:${totalW}px">${dayHtml}</div>
+            </div>
+        </div>
+        <div style="position:relative">
+            ${rowsHtml}
+            ${arrowPaths ? `<svg class="gantt-arrows-svg" style="height:${svgH}px">${arrowDefs}${arrowPaths}</svg>` : ""}
+        </div>
+    </div>`;
+}
+
+/** Wire up drag-to-resize, task click-to-edit */
+function initGanttInteractions() {
+    const container = $("gantt-body");
+    if (!container) return;
+
+    // Task cell click → edit popup
+    container.querySelectorAll(".gantt-task-cell").forEach(cell => {
+        cell.addEventListener("click", e => {
+            e.stopPropagation();
+            const idx = parseInt(cell.dataset.taskIdx, 10);
+            openGanttTaskEdit(idx, cell);
+        });
+    });
+
+    // Gantt bar click → edit popup
+    container.querySelectorAll(".gantt-bar").forEach(bar => {
+        bar.addEventListener("click", e => {
+            if (e.target.classList.contains("gantt-drag-handle")) return;
+            e.stopPropagation();
+            const idx = parseInt(bar.dataset.taskIdx, 10);
+            openGanttTaskEdit(idx, bar);
+        });
+    });
+
+    // Drag handles
+    container.querySelectorAll(".gantt-drag-handle").forEach(handle => {
+        handle.addEventListener("mousedown", e => {
+            e.preventDefault();
+            e.stopPropagation();
+            const idx  = parseInt(handle.dataset.taskIdx, 10);
+            const side = handle.dataset.side;
+            const bar  = container.querySelector(`.gantt-bar[data-task-idx="${idx}"]`);
+            if (!bar) return;
+            _ganttDragging = {
+                idx, side,
+                startX:    e.clientX,
+                origLeft:  parseFloat(bar.style.left)  || 0,
+                origWidth: parseFloat(bar.style.width) || GANTT_DAY_W,
+                bar,
+            };
+        });
+    });
+
+    document.addEventListener("mousemove", _ganttOnMouseMove);
+    document.addEventListener("mouseup",   _ganttOnMouseUp);
+}
+
+function _ganttOnMouseMove(e) {
+    if (!_ganttDragging) return;
+    const { idx, side, startX, origLeft, origWidth, bar } = _ganttDragging;
+    const dx = e.clientX - startX;
+    const snapDx = Math.round(dx / GANTT_DAY_W) * GANTT_DAY_W;
+
+    if (side === "left") {
+        const newLeft  = Math.max(0, origLeft + snapDx);
+        const newWidth = Math.max(GANTT_DAY_W, origWidth - snapDx);
+        bar.style.left  = newLeft  + "px";
+        bar.style.width = newWidth + "px";
+    } else {
+        const newWidth = Math.max(GANTT_DAY_W, origWidth + snapDx);
+        bar.style.width = newWidth + "px";
+    }
+}
+
+function _ganttOnMouseUp(e) {
+    if (!_ganttDragging) return;
+    const { idx, side, bar } = _ganttDragging;
+    _ganttDragging = null;
+
+    // Compute new dates from pixel positions
+    const newLeft  = parseFloat(bar.style.left);
+    const newWidth = parseFloat(bar.style.width);
+    const newStartMs = _ganttStartMs + Math.round(newLeft / GANTT_DAY_W) * 86400000;
+    const newEndMs   = newStartMs + Math.round(newWidth / GANTT_DAY_W) * 86400000;
+    const newStart   = new Date(newStartMs).toISOString().slice(0, 10);
+    const newEnd     = new Date(newEndMs).toISOString().slice(0, 10);
+
+    // Update in-memory task
+    const task = _ganttTasks[idx];
+    if (task) {
+        task._start = newStart;
+        task._end   = newEnd;
+        task.start_date = newStart;
+        if (task.due_date !== undefined)  task.due_date  = newEnd;
+        if (task.end_date !== undefined)  task.end_date  = newEnd;
+
+        // Update task cell dates display
+        const ganttBody = $("gantt-body");
+        if (ganttBody) {
+            const cells = ganttBody.querySelectorAll(`.gantt-task-cell[data-task-idx="${idx}"] .gantt-task-date`);
+            if (cells[0]) cells[0].textContent = new Date(newStartMs).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+            if (cells[1]) cells[1].textContent = new Date(newEndMs).toLocaleDateString("en-GB", { day: "2-digit", month: "short" });
+        }
+
+        // Persist via API if task has a real id
+        if (task.id && !String(task.id).startsWith("phase-")) {
+            const body = { start_date: newStart };
+            if (task.due_date !== undefined) body.due_date = newEnd;
+            else if (task.end_date !== undefined) body.end_date = newEnd;
+            apiPut(`tasks/${task.id}`, body).catch(() => {/* silent */});
+        }
+    }
+}
+
+/** Open a small popup to edit a task's name/dates/progress */
+function openGanttTaskEdit(idx, anchorEl) {
+    // Remove any existing popup
+    document.querySelectorAll(".gantt-task-popup").forEach(p => p.remove());
+
+    const task = _ganttTasks[idx];
+    if (!task) return;
+
+    const popup = document.createElement("div");
+    popup.className = "gantt-task-popup";
+
+    const startVal = task._start || task.start_date || "";
+    const endVal   = task._end   || task.due_date   || task.end_date || "";
+    const pct      = task.progress ?? 0;
+    const statusOpts = ["todo","in_progress","done"].map(s =>
+        `<option value="${s}"${task.status===s?" selected":""}>${s.replace("_"," ")}</option>`).join("");
+
+    popup.innerHTML = `
+        <div class="gantt-task-popup-title">✏️ Edit Task</div>
+        <div class="form-row">
+            <label class="form-label">Name</label>
+            <input type="text" id="gpop-name" value="${escHtml(task.title || task.name || "")}" />
+        </div>
+        <div class="form-row">
+            <label class="form-label">Status</label>
+            <select id="gpop-status">${statusOpts}</select>
+        </div>
+        <div class="form-row">
+            <label class="form-label">Start date</label>
+            <input type="date" id="gpop-start" value="${escHtml(startVal)}" />
+        </div>
+        <div class="form-row">
+            <label class="form-label">End date</label>
+            <input type="date" id="gpop-end" value="${escHtml(endVal)}" />
+        </div>
+        <div class="form-row">
+            <label class="form-label">Progress: <span id="gpop-pct-val">${pct}</span>%</label>
+            <input type="range" id="gpop-pct" min="0" max="100" value="${pct}" />
+        </div>
+        <div class="gantt-popup-footer">
+            <button class="btn btn-ghost" id="gpop-cancel">Cancel</button>
+            <button class="btn btn-primary" id="gpop-save">Save</button>
+        </div>`;
+
+    document.body.appendChild(popup);
+
+    // Position popup near anchor
+    const rect = anchorEl.getBoundingClientRect();
+    const popW = 280, popH = 300;
+    let top  = rect.bottom + 6;
+    let left = rect.left;
+    if (top + popH > window.innerHeight) top  = rect.top - popH - 6;
+    if (left + popW > window.innerWidth) left = window.innerWidth - popW - 10;
+    popup.style.top  = Math.max(8, top)  + "px";
+    popup.style.left = Math.max(8, left) + "px";
+
+    // Live progress label
+    popup.querySelector("#gpop-pct").oninput = function() {
+        popup.querySelector("#gpop-pct-val").textContent = this.value;
+    };
+
+    popup.querySelector("#gpop-cancel").onclick = () => popup.remove();
+
+    popup.querySelector("#gpop-save").onclick = async () => {
+        const newName   = popup.querySelector("#gpop-name").value.trim();
+        const newStatus = popup.querySelector("#gpop-status").value;
+        const newStart  = popup.querySelector("#gpop-start").value;
+        const newEnd    = popup.querySelector("#gpop-end").value;
+        const newPct    = parseInt(popup.querySelector("#gpop-pct").value, 10);
+
+        // Update in-memory
+        if (task.title !== undefined) task.title = newName;
+        if (task.name  !== undefined) task.name  = newName;
+        task.status   = newStatus;
+        task._start   = newStart;
+        task._end     = newEnd;
+        task.start_date = newStart;
+        if (task.due_date !== undefined)  task.due_date  = newEnd;
+        if (task.end_date !== undefined)  task.end_date  = newEnd;
+        task.progress = newPct;
+        popup.remove();
+
+        // Re-render the chart with updated data
+        const ganttBody = $("gantt-body");
+        if (ganttBody) {
+            ganttBody.innerHTML = renderGanttChart(_ganttTasks);
+            initGanttInteractions();
+        }
+
+        // Persist via API
+        if (task.id && !String(task.id).startsWith("phase-")) {
+            const body = { status: newStatus, progress: newPct, start_date: newStart };
+            if (task.due_date !== undefined) body.due_date = newEnd;
+            apiPut(`tasks/${task.id}`, body).catch(() => {/* silent */});
+        }
+    };
+
+    // Close on outside click
+    setTimeout(() => {
+        document.addEventListener("click", function outsideClick(e) {
+            if (!popup.contains(e.target)) {
+                popup.remove();
+                document.removeEventListener("click", outsideClick);
+            }
+        });
+    }, 10);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -3713,11 +4207,17 @@ async function loadPanel(panelId) {
     el.innerHTML = loading();
     try {
         const data = await fetchData(panel.endpoint);
-        el.innerHTML = panel.fn(data);
+        try {
+            el.innerHTML = panel.fn(data);
+        } catch (renderErr) {
+            console.error(`[loadPanel] render error for panel "${panelId}":`, renderErr, "data:", data);
+            throw new Error(`Render error: ${renderErr.message}`);
+        }
         if (panel.init) panel.init(data, el);
         lastUpdate = new Date();
         updateStatusBar();
     } catch(e) {
+        console.error(`[loadPanel] failed to load panel "${panelId}":`, e);
         el.innerHTML = errorBox(`Failed to load ${panelId}: ${e.message}`);
     }
 }
