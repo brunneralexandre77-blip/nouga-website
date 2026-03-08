@@ -1738,10 +1738,11 @@ async function openProjectDrilldown(project) {
 
 const GANTT_DAY_W = 28; // pixels per day
 
-let _ganttProject = null;
-let _ganttTasks   = [];
-let _ganttStartMs = 0;
-let _ganttDragging = null; // { taskIdx, side, startX, origLeft, origWidth }
+let _ganttProject     = null;
+let _ganttTasks       = [];
+let _ganttStartMs     = 0;
+let _ganttDragging    = null; // { taskIdx, side, startX, origLeft, origWidth }
+let _ganttRenderToken = 0;   // incremented each time renderProjectDetail is called; detects stale async results
 
 /** Assign synthetic dates to tasks that lack them */
 function _ganttAssignDates(tasks, project) {
@@ -1788,7 +1789,10 @@ function _ganttBounds(tasks) {
 
 /** Render the full project detail / Gantt view into panel-projects */
 async function renderProjectDetail(project) {
+    console.log(`[Gantt] renderProjectDetail called for: "${project.name}"`);
     const el = $("panel-projects");
+    // Stamp this render with a token so we can detect if another render started while we awaited
+    const renderToken = ++_ganttRenderToken;
     el.innerHTML = `<div class="gantt-view"><div class="gantt-view-header">
         <button class="btn btn-ghost" id="gantt-back">← Projects</button>
         <div class="gantt-view-title">
@@ -1812,7 +1816,9 @@ async function renderProjectDetail(project) {
     $("gantt-back").onclick = () => loadPanel("projects");
 
     try {
+        console.log(`[Gantt] fetchData("tasks") starting — render token ${renderToken}`);
         const tasksData = await fetchData("tasks");
+        console.log(`[Gantt] fetchData("tasks") succeeded — render token ${renderToken}`);
         const allTasks = [
             ...(tasksData.todo        || []),
             ...(tasksData.in_progress || []),
@@ -1840,19 +1846,33 @@ async function renderProjectDetail(project) {
             }));
         }
 
+        // If another renderProjectDetail started while we were awaiting, discard this stale result
+        if (_ganttRenderToken !== renderToken) {
+            console.warn(`[Gantt] render token mismatch (got ${renderToken}, current ${_ganttRenderToken}) — discarding stale result`);
+            return;
+        }
+
+        const ganttBody = $("gantt-body");
+        if (!ganttBody) {
+            console.warn(`[Gantt] gantt-body element gone after fetch (panel navigated away) — aborting`);
+            return;
+        }
+
         _ganttProject = project;
         _ganttTasks   = tasks;
         _ganttAssignDates(tasks, project);
 
-        const ganttBody = $("gantt-body");
         if (tasks.length === 0) {
             ganttBody.innerHTML = `<div class="gantt-empty"><span style="font-size:2rem">📭</span>No tasks linked to this project yet.</div>`;
             return;
         }
+        console.log(`[Gantt] rendering ${tasks.length} tasks for "${project.name}"`);
         ganttBody.innerHTML = renderGanttChart(tasks);
         initGanttInteractions();
     } catch(e) {
-        $("gantt-body").innerHTML = errorBox(`Failed to load tasks: ${e.message}`);
+        console.error(`[Gantt] fetchData("tasks") failed:`, e);
+        const ganttBody = $("gantt-body");
+        if (ganttBody) ganttBody.innerHTML = errorBox(`Failed to load tasks: ${e.message}`);
     }
 }
 
@@ -4128,7 +4148,15 @@ async function loadPanel(panelId) {
 // ──────────────────────────────────────────────────────────────────────────────
 function startRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
-    refreshTimer = setInterval(() => { if (activePanel) loadPanel(activePanel); }, REFRESH_MS);
+    refreshTimer = setInterval(() => {
+        if (!activePanel) return;
+        // Don't overwrite the Gantt view — if gantt-body is present, the user is viewing a project detail
+        if (activePanel === "projects" && $("gantt-body")) {
+            console.log("[Refresh] skipping auto-refresh — Gantt view is active");
+            return;
+        }
+        loadPanel(activePanel);
+    }, REFRESH_MS);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
