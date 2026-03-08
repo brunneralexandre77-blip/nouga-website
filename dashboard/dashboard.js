@@ -4097,10 +4097,173 @@ function renderPipeline(d) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Gantt Timeline View
+// ──────────────────────────────────────────────────────────────────────────────
+function renderGantt(d) {
+    const allTasks = [
+        ...(d.in_progress || []).map(t => ({ ...t, _status: "in_progress" })),
+        ...(d.todo        || []).map(t => ({ ...t, _status: "todo"        })),
+        ...(d.done        || []).map(t => ({ ...t, _status: "done"        })),
+    ];
+
+    // Timeline: 4 weeks back → 12 weeks forward = 16 weeks
+    const today       = new Date();
+    const WEEKS_BEFORE = 4;
+    const WEEKS_AFTER  = 12;
+    const TOTAL_WEEKS  = WEEKS_BEFORE + WEEKS_AFTER;
+    const WEEK_W       = 80;  // px per week column
+    const LABEL_W      = 220; // px for the task-name column
+
+    function getMonday(dt) {
+        const d2  = new Date(dt);
+        const day = d2.getDay();
+        d2.setDate(d2.getDate() - (day === 0 ? 6 : day - 1));
+        d2.setHours(0, 0, 0, 0);
+        return d2;
+    }
+
+    function isoWeek(dt) {
+        const d2     = new Date(Date.UTC(dt.getFullYear(), dt.getMonth(), dt.getDate()));
+        const dayNum = d2.getUTCDay() || 7;
+        d2.setUTCDate(d2.getUTCDate() + 4 - dayNum);
+        const yearStart = new Date(Date.UTC(d2.getUTCFullYear(), 0, 1));
+        return Math.ceil((((d2 - yearStart) / 86400000) + 1) / 7);
+    }
+
+    const currentMonday  = getMonday(today);
+    const timelineStart  = new Date(currentMonday);
+    timelineStart.setDate(timelineStart.getDate() - WEEKS_BEFORE * 7);
+
+    // Build week descriptors
+    const weeks = Array.from({ length: TOTAL_WEEKS }, (_, i) => {
+        const ws = new Date(timelineStart);
+        ws.setDate(ws.getDate() + i * 7);
+        return {
+            start:     ws,
+            num:       isoWeek(ws),
+            isCurrent: i === WEEKS_BEFORE,
+            label:     `W${isoWeek(ws)}`,
+            dateLabel: ws.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
+        };
+    });
+
+    // Convert a task to { left, width, hasDate } in pixels, or null if off-screen
+    function barPos(task) {
+        const rawDate = task.target_date || task.due_date;
+        let endDate   = rawDate ? new Date(rawDate) : null;
+        let startDate;
+
+        if (task._status === "in_progress") {
+            startDate = new Date(today);
+            startDate.setDate(startDate.getDate() - 7);
+            if (!endDate) { endDate = new Date(today); endDate.setDate(endDate.getDate() + 7); }
+        } else if (task._status === "todo") {
+            startDate = new Date(today);
+            if (!endDate) { endDate = new Date(today); endDate.setDate(endDate.getDate() + 7); }
+        } else { // done
+            if (endDate) {
+                startDate = new Date(endDate);
+                startDate.setDate(startDate.getDate() - 14);
+            } else {
+                startDate = new Date(today); startDate.setDate(startDate.getDate() - 14);
+                endDate   = new Date(today);
+            }
+        }
+
+        const msPerWeek   = 7 * 24 * 3600 * 1000;
+        const startOffset = (startDate - timelineStart) / msPerWeek;
+        const endOffset   = (endDate   - timelineStart) / msPerWeek;
+
+        if (endOffset <= 0 || startOffset >= TOTAL_WEEKS) return null; // completely off-screen
+
+        const clampedStart = Math.max(0, startOffset);
+        const clampedEnd   = Math.min(TOTAL_WEEKS, endOffset);
+        return {
+            left:    clampedStart * WEEK_W,
+            width:   Math.max(WEEK_W * 0.5, (clampedEnd - clampedStart) * WEEK_W),
+            hasDate: !!rawDate,
+        };
+    }
+
+    const STATUS_COLOR = { in_progress: "#3b82f6", todo: "#8b5cf6", done: "#10b981" };
+    const STATUS_LABEL = { in_progress: "In Progress", todo: "To Do", done: "Done" };
+
+    const weekHeaderHtml = weeks.map(w => `
+        <div class="gantt-week-hdr${w.isCurrent ? " gantt-week-now" : ""}" style="width:${WEEK_W}px">
+            <div class="gantt-wnum">${w.label}</div>
+            <div class="gantt-wdate">${w.dateLabel}</div>
+        </div>`).join("");
+
+    const weekCols = weeks.map((w, i) =>
+        `<div class="gantt-col${w.isCurrent ? " gantt-col-now" : ""}" style="left:${i * WEEK_W}px;width:${WEEK_W}px"></div>`
+    ).join("");
+
+    let rowsHtml = "";
+    for (const status of ["in_progress", "todo", "done"]) {
+        const tasks = allTasks.filter(t => t._status === status);
+        if (!tasks.length) continue;
+
+        const color = STATUS_COLOR[status];
+        rowsHtml += `
+            <div class="gantt-group-row">
+                <div class="gantt-lbl" style="width:${LABEL_W}px">
+                    <span class="gantt-group-lbl">${STATUS_LABEL[status]} · ${tasks.length}</span>
+                </div>
+                <div class="gantt-bars" style="width:${TOTAL_WEEKS * WEEK_W}px">${weekCols}</div>
+            </div>`;
+
+        for (const task of tasks) {
+            const pos      = barPos(task);
+            const dueLabel = task.target_date || task.due_date
+                ? `Due: ${task.target_date || task.due_date}` : "No date set";
+            const barHtml  = pos ? `
+                <div class="gantt-bar${pos.hasDate ? "" : " gantt-bar-nodate"}"
+                     style="left:${pos.left}px;width:${pos.width}px;background:${color}"
+                     title="${escHtml(task.title)} — ${dueLabel}">
+                    <span class="gantt-bar-lbl">${escHtml(task.title)}</span>
+                </div>` : "";
+
+            rowsHtml += `
+                <div class="gantt-task-row">
+                    <div class="gantt-lbl" style="width:${LABEL_W}px">
+                        <span class="gantt-task-name" title="${escHtml(task.title)}">${escHtml(task.title)}</span>
+                        <span class="gantt-task-who">${escHtml(task.assignee || "")}</span>
+                    </div>
+                    <div class="gantt-bars" style="width:${TOTAL_WEEKS * WEEK_W}px">
+                        ${weekCols}${barHtml}
+                    </div>
+                </div>`;
+        }
+    }
+
+    const totalWidth = LABEL_W + TOTAL_WEEKS * WEEK_W;
+    return `
+        <div class="panel-header">
+            <div>
+                <div class="panel-title">Timeline</div>
+                <div class="panel-subtitle">Week-by-week Gantt view · ${allTasks.length} tasks · today = W${isoWeek(today)}</div>
+            </div>
+            <button class="btn btn-ghost" onclick="navigate('tasks')" style="font-size:0.82rem">← Kanban</button>
+        </div>
+        <div class="gantt-wrap">
+            <div class="gantt-inner" style="min-width:${totalWidth}px">
+                <div class="gantt-head-row">
+                    <div class="gantt-head-lbl" style="width:${LABEL_W}px">Task</div>
+                    <div class="gantt-head-weeks" style="width:${TOTAL_WEEKS * WEEK_W}px;display:flex">
+                        ${weekHeaderHtml}
+                    </div>
+                </div>
+                <div class="gantt-body">${rowsHtml}</div>
+            </div>
+        </div>`;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Panel map
 // ──────────────────────────────────────────────────────────────────────────────
 const PANELS = {
     tasks:     { fn: renderTasks,     endpoint: "tasks",    init: initTasksPanel   },
+    gantt:     { fn: renderGantt,     endpoint: "tasks"                            },
     agents:    { fn: renderAgents,    endpoint: "agents",   init: initAgentsPanel  },
     content:   { fn: renderContent,   endpoint: "content"                          },
     approvals: { fn: renderApprovals, endpoint: "approvals"                        },
