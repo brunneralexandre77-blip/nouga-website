@@ -209,20 +209,45 @@ function toggleNotifDrawer() {
 // ──────────────────────────────────────────────────────────────────────────────
 // API helpers
 // ──────────────────────────────────────────────────────────────────────────────
-async function fetchData(endpoint) {
+async function fetchData(endpoint, { retry = 1 } = {}) {
+    const url = `${API}/${endpoint}`;
+    console.log(`[fetchData] → GET ${url}`, { credentials: "include", attempt: retry });
     let res;
     try {
-        res = await fetch(`${API}/${endpoint}`, { credentials: "include", signal: AbortSignal.timeout(8000) });
+        res = await fetch(url, { credentials: "include", signal: AbortSignal.timeout(8000) });
     } catch (netErr) {
-        const msg = netErr.name === "TimeoutError"
-            ? `Timeout fetching /${endpoint} (>8s)`
-            : `Network error fetching /${endpoint}: ${netErr.message}`;
+        let msg;
+        if (netErr.name === "TimeoutError") {
+            msg = `Timeout fetching /${endpoint} (>8s)`;
+        } else if (netErr instanceof TypeError && netErr.message.toLowerCase().includes("failed to fetch")) {
+            // "Failed to fetch" can mean: CORS preflight rejected, DNS failure, server down, or mixed-content block
+            msg = `Network/CORS error fetching /${endpoint}: ${netErr.message}`;
+            console.error(`[fetchData] DIAGNOSIS — possible causes for "Failed to fetch":
+  1. CORS: Does ${API_HOST} return Access-Control-Allow-Origin for this origin?
+  2. Auth: Is the session cookie present & sent? (credentials:"include" is set)
+  3. Network: Is ${API_HOST} reachable? (try fetch in console: fetch("${API_HOST}/api/health"))
+  4. Mixed content: Is this page on HTTPS but the API on HTTP?
+  5. Browser extension blocking the request?`, netErr);
+        } else {
+            msg = `Network error fetching /${endpoint}: ${netErr.message}`;
+        }
         console.error(`[fetchData] ${msg}`, netErr);
+        if (retry > 0) {
+            console.warn(`[fetchData] retrying /${endpoint} (${retry} attempt(s) left)…`);
+            await new Promise(r => setTimeout(r, 1500));
+            return fetchData(endpoint, { retry: retry - 1 });
+        }
         throw new Error(msg);
     }
+    console.log(`[fetchData] ← ${res.status} ${res.statusText} from /${endpoint}`);
     if (!res.ok) {
+        const body = await res.text().catch(() => "");
         const msg = `HTTP ${res.status} ${res.statusText} from /${endpoint}`;
-        console.error(`[fetchData] ${msg}`);
+        if (res.status === 401 || res.status === 403) {
+            console.error(`[fetchData] AUTH ERROR — session may have expired. Response body:`, body);
+        } else {
+            console.error(`[fetchData] ${msg}. Response body:`, body);
+        }
         throw new Error(msg);
     }
     let json;
@@ -235,7 +260,7 @@ async function fetchData(endpoint) {
     }
     if (!json.success) {
         const msg = json.error || "API error";
-        console.error(`[fetchData] /${endpoint} returned success=false:`, msg);
+        console.error(`[fetchData] /${endpoint} returned success=false:`, msg, json);
         throw new Error(msg);
     }
     return json.data;
