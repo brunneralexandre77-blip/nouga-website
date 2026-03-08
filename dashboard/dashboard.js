@@ -3990,8 +3990,10 @@ function initFloatingChat() {
                 dots = (dots + 1) % 4;
                 dotEl.textContent = `⏳ ${label} thinking${".".repeat(dots)}`;
             }, 500);
+            const chatUrl = `${API}/agents/${selAgent}/chat`;
+            console.log(`[chat] POST ${chatUrl}`, { message: msg });
             try {
-                const res = await fetch(`${API}/agents/${selAgent}/chat`, {
+                const res = await fetch(chatUrl, {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ message: msg }),
@@ -4000,8 +4002,9 @@ function initFloatingChat() {
                 });
                 clearInterval(dotTimer);
                 dotEl.remove();
+                console.log(`[chat] HTTP ${res.status} from ${selAgent}`, { url: res.url, ok: res.ok, headers: Object.fromEntries(res.headers) });
                 const json = await res.json();
-                console.log(`[chat] response received from ${selAgent}:`, json);
+                console.log(`[chat] response body from ${selAgent}:`, json);
                 if (!json.success) throw new Error(json.error || "API error");
                 const reply = json.data.reply;
                 msgs[selAgent].push({ role: "agent", text: reply, ts: new Date().toISOString() });
@@ -4011,9 +4014,21 @@ function initFloatingChat() {
             } catch(e) {
                 clearInterval(dotTimer);
                 dotEl.remove();
-                const errMsg = e.name === "TimeoutError"
-                    ? `⚠️ ${label} timed out (90s)`
-                    : `⚠️ ${e.message}`;
+                console.error(`[chat] error for ${selAgent}:`, e);
+                console.error(`[chat] error name=${e.name}, message=${e.message}, stack=`, e.stack);
+                let errMsg;
+                if (e.name === "TimeoutError" || e.name === "AbortError") {
+                    errMsg = `⚠️ ${label} timed out (90s)`;
+                } else if (e instanceof TypeError && e.message.toLowerCase().includes("fetch")) {
+                    // "Failed to fetch" — network-level failure (CORS, DNS, server down)
+                    console.error(`[chat] Network/CORS error — URL was: ${chatUrl}`);
+                    console.error(`[chat] Check: 1) Is api.nouga.ai reachable? 2) CORS headers present? 3) Session cookie sent (credentials:include)?`);
+                    errMsg = `⚠️ Network error — check console for details (possible CORS or connectivity issue)`;
+                } else if (e.message === "API error" || e.message?.startsWith("API")) {
+                    errMsg = `⚠️ ${e.message}`;
+                } else {
+                    errMsg = `⚠️ ${e.message}`;
+                }
                 msgEl.insertAdjacentHTML("beforeend", `<div style="font-size:0.73rem;color:var(--red,#f87171);padding:2px 4px">${escHtml(errMsg)}</div>`);
                 msgEl.scrollTop = msgEl.scrollHeight;
             } finally {
