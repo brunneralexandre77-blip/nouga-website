@@ -1706,11 +1706,11 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     overflow: hidden;
 }
 
-.task-th-name     { width: 30%; }
+.task-th-name     { width: 27%; }
 .task-th-status   { width: 12%; }
 .task-th-assignee { width: 13%; }
-.task-th-date     { width: 12%; }
-.task-th-deps     { width: 16%; }
+.task-th-date     { width: 11%; }
+.task-th-timeline { width: 22%; }
 .task-th-actions  { width: 10%; text-align: right; }
 
 /* Task rows */
@@ -1748,8 +1748,64 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     min-height: 38px;
 }
 
-.task-cell-deps {
+.task-cell-timeline {
+    padding: 4px 8px;
+    vertical-align: middle;
+}
+
+/* Mini timeline bar */
+.task-tl-wrap {
     position: relative;
+    height: 20px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 4px;
+    overflow: hidden;
+    cursor: default;
+}
+
+.task-tl-bar {
+    position: absolute;
+    top: 3px;
+    height: 14px;
+    border-radius: 3px;
+    min-width: 6px;
+}
+
+.task-tl-bar-todo        { background: linear-gradient(90deg, #8b5cf6, #7c3aed); opacity: 0.85; }
+.task-tl-bar-inprogress  { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+.task-tl-bar-done        { background: linear-gradient(90deg, #10b981, #059669); opacity: 0.75; }
+.task-tl-bar-overdue     { background: linear-gradient(90deg, #ef4444, #dc2626); }
+
+.task-tl-nodate {
+    height: 20px;
+    border-radius: 4px;
+    background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 6px);
+    opacity: 0.5;
+}
+
+/* Expand / collapse toggle */
+.task-expand-btn {
+    background: none;
+    border: none;
+    color: var(--text3);
+    font-size: 0.65rem;
+    cursor: pointer;
+    padding: 2px 3px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    line-height: 1;
+    transition: color 0.15s, background 0.15s;
+}
+
+.task-expand-btn:hover {
+    color: var(--text);
+    background: rgba(255,255,255,0.06);
+}
+
+.task-expand-placeholder {
+    display: inline-block;
+    width: 16px;
+    flex-shrink: 0;
 }
 
 .task-subtask-indent {
@@ -1839,22 +1895,6 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
 .task-date-input:focus {
     outline: none;
     border-color: var(--blue);
-}
-
-.task-deps-select {
-    font-size: 0.75rem;
-}
-
-.task-dep-count {
-    position: absolute;
-    top: 4px;
-    right: 10px;
-    font-size: 0.65rem;
-    background: var(--blue);
-    color: #fff;
-    border-radius: 10px;
-    padding: 1px 5px;
-    pointer-events: none;
 }
 
 /* Action buttons */

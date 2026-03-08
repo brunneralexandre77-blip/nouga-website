@@ -1833,6 +1833,56 @@ async function openProjectDrilldown(project) {
 let _detailRenderToken = 0;
 let _taskViewProject   = null;
 let _taskViewTasks     = [];
+let _taskViewCollapsed = new Set(); // root task IDs that are collapsed
+
+/** Render a mini timeline bar for the project detail task table. */
+function _miniTimelineBarHtml(task) {
+    const WEEKS_BEFORE = 2;
+    const WEEKS_TOTAL  = 12;
+    const today        = new Date();
+    const msPerWeek    = 7 * 24 * 3600 * 1000;
+    const timelineStart = new Date(today.getTime() - WEEKS_BEFORE * msPerWeek);
+    const totalMs       = WEEKS_TOTAL * msPerWeek;
+
+    const rawDate = task.target_date || task.due_date;
+    if (!rawDate) return `<div class="task-tl-nodate" title="No target date set"></div>`;
+
+    const endDate   = new Date(rawDate);
+    const status    = task.status || "todo";
+    let   startDate;
+    if (status === "in_progress") {
+        startDate = new Date(today);
+        startDate.setDate(startDate.getDate() - 7);
+    } else if (status === "done") {
+        startDate = new Date(endDate);
+        startDate.setDate(startDate.getDate() - 14);
+    } else {
+        startDate = new Date(today);
+    }
+
+    const leftPct  = ((startDate - timelineStart) / totalMs) * 100;
+    const rightPct = ((endDate   - timelineStart) / totalMs) * 100;
+    const clampedL = Math.max(0, leftPct);
+    const clampedW = Math.max(3, Math.min(100, rightPct) - clampedL);
+
+    if (rightPct <= 0 || leftPct >= 100) {
+        const dueStr = endDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        return `<div class="task-tl-nodate" title="${escHtml(dueStr)} — out of view"></div>`;
+    }
+
+    const isOverdue = rawDate && endDate < today && status !== "done";
+    const barClass  = isOverdue                  ? "task-tl-bar-overdue"
+                    : status === "done"          ? "task-tl-bar-done"
+                    : status === "in_progress"   ? "task-tl-bar-inprogress"
+                    : "task-tl-bar-todo";
+
+    const dueLabel = endDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const tooltip  = `${dueLabel}${isOverdue ? " ⚠ Overdue" : ""}`;
+
+    return `<div class="task-tl-wrap" title="${escHtml(tooltip)}">
+        <div class="task-tl-bar ${barClass}" style="left:${clampedL.toFixed(1)}%;width:${clampedW.toFixed(1)}%"></div>
+    </div>`;
+}
 
 const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex"];
 const TASK_STATUSES  = [
@@ -1858,6 +1908,7 @@ async function renderProjectDetail(project) {
                 </div>
             </div>
             <div style="min-width:160px">${progressBar(project.progress || 0)}</div>
+            <button class="btn btn-primary" id="task-header-add-btn" style="flex-shrink:0">+ Task</button>
         </div>
         <div id="task-view-body" style="flex:1;overflow:auto;padding:0 0 16px">
             <div class="loading"><div class="spinner"></div> Loading tasks…</div>
@@ -1920,16 +1971,22 @@ function renderTaskList(tasks, project) {
         const assigneeOpts = ["", ...TASK_ASSIGNEES].map(a =>
             `<option value="${a}"${(task.assignee || task.assigned_to || "") === a ? " selected" : ""}>${a ? escHtml(a) : "—"}</option>`
         ).join("");
-        const depsOpts = tasks.filter(d => d.id !== task.id).map(d =>
-            `<option value="${d.id}"${(task.dependencies || []).includes(String(d.id)) ? " selected" : ""}>${escHtml(d.title || d.name || String(d.id))}</option>`
-        ).join("");
-        const targetDate = task.target_date || task.due_date || "";
-        const depCount   = (task.dependencies || []).length;
+        const targetDate  = task.target_date || task.due_date || "";
+        const hasChildren = !!(childMap[String(task.id)] && childMap[String(task.id)].length);
+        const isCollapsed = _taskViewCollapsed.has(String(task.id));
+
+        let expandBtn = "";
+        if (depth === 0 && hasChildren) {
+            expandBtn = `<button class="task-expand-btn" data-task-id="${task.id}" title="${isCollapsed ? "Expand" : "Collapse"}">${isCollapsed ? "▶" : "▼"}</button>`;
+        } else if (depth === 0) {
+            expandBtn = `<span class="task-expand-placeholder"></span>`;
+        }
 
         let rows = `
         <tr class="task-row" data-task-id="${task.id}" draggable="true">
             <td class="task-cell-name" style="padding-left:${12 + indent}px">
                 ${depth > 0 ? `<span class="task-subtask-indent"></span>` : ""}
+                ${expandBtn}
                 <span class="task-drag-handle" title="Drag to reorder">⠿</span>
                 <input type="text" class="task-name-input" value="${escHtml(task.title || task.name || "")}" data-task-id="${task.id}" placeholder="Task name…" />
             </td>
@@ -1946,11 +2003,8 @@ function renderTaskList(tasks, project) {
             <td class="task-cell">
                 <input type="date" class="task-date-input" data-task-id="${task.id}" data-field="target_date" value="${escHtml(targetDate)}" />
             </td>
-            <td class="task-cell task-cell-deps">
-                <select class="task-select task-deps-select" data-task-id="${task.id}" data-field="dependencies" multiple size="1" title="Hold Ctrl/Cmd to select multiple">
-                    ${depsOpts}
-                </select>
-                ${depCount > 0 ? `<span class="task-dep-count">${depCount}</span>` : ""}
+            <td class="task-cell task-cell-timeline">
+                ${_miniTimelineBarHtml(task)}
             </td>
             <td class="task-cell task-actions-cell">
                 <button class="task-btn task-subtask-btn" data-task-id="${task.id}" title="Add subtask">+ Sub</button>
@@ -1958,7 +2012,7 @@ function renderTaskList(tasks, project) {
             </td>
         </tr>`;
 
-        if (childMap[String(task.id)]) {
+        if (!isCollapsed && childMap[String(task.id)]) {
             childMap[String(task.id)].forEach(child => { rows += renderTaskRow(child, depth + 1); });
         }
         return rows;
@@ -1974,12 +2028,12 @@ function renderTaskList(tasks, project) {
                     <th class="task-th task-th-status">Status</th>
                     <th class="task-th task-th-assignee">Assigned To</th>
                     <th class="task-th task-th-date">Target Date</th>
-                    <th class="task-th task-th-deps">Dependencies</th>
+                    <th class="task-th task-th-timeline">Timeline</th>
                     <th class="task-th task-th-actions">Actions</th>
                 </tr>
             </thead>
             <tbody id="task-tbody">
-                ${tableRows || `<tr><td colspan="6" class="task-empty-row">No tasks yet — click "+ Add Task" to create one.</td></tr>`}
+                ${tableRows || `<tr><td colspan="6" class="task-empty-row">No tasks yet — click &quot;+ Add Task&quot; to create one.</td></tr>`}
             </tbody>
         </table>
         <div class="task-add-bar">
@@ -2078,28 +2132,42 @@ function initTaskListInteractions(tasks, project) {
         });
     });
 
-    // Add new top-level task
-    const addBtn = $("task-add-new-btn");
-    if (addBtn) {
-        addBtn.addEventListener("click", async () => {
-            try {
-                const newTask = await apiPost("tasks", {
-                    title: "New task",
-                    status: "todo",
-                    project: project.name,
-                });
-                _taskViewTasks = [..._taskViewTasks, newTask];
-                renderTaskList(_taskViewTasks, project);
-                setTimeout(() => {
-                    const inp = $("task-view-body")?.querySelector(`input[data-task-id="${newTask.id}"]`);
-                    if (inp) { inp.select(); inp.focus(); }
-                }, 50);
-            } catch(e) {
-                console.error("[TaskView] add task:", e);
-                alert("Failed to add task: " + e.message);
+    // Expand / collapse root tasks
+    viewBody.querySelectorAll(".task-expand-btn").forEach(btn => {
+        btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const id = String(btn.dataset.taskId);
+            if (_taskViewCollapsed.has(id)) {
+                _taskViewCollapsed.delete(id);
+            } else {
+                _taskViewCollapsed.add(id);
             }
+            renderTaskList(_taskViewTasks, project);
         });
+    });
+
+    // Add new top-level task (bottom bar button or header button)
+    async function _addNewTask() {
+        try {
+            const newTask = await apiPost("tasks", {
+                title: "New task",
+                status: "todo",
+                project: project.name,
+            });
+            _taskViewTasks = [..._taskViewTasks, newTask];
+            renderTaskList(_taskViewTasks, project);
+            setTimeout(() => {
+                const inp = $("task-view-body")?.querySelector(`input[data-task-id="${newTask.id}"]`);
+                if (inp) { inp.select(); inp.focus(); }
+            }, 50);
+        } catch(e) {
+            console.error("[TaskView] add task:", e);
+            alert("Failed to add task: " + e.message);
+        }
     }
+
+    $("task-add-new-btn")?.addEventListener("click", _addNewTask);
+    $("task-header-add-btn")?.addEventListener("click", _addNewTask);
 }
 
 function initTaskDragDrop(tasks, project) {
@@ -4482,7 +4550,6 @@ function renderGantt(d) {
 // ──────────────────────────────────────────────────────────────────────────────
 const PANELS = {
     tasks:     { fn: renderTasks,     endpoint: "tasks",    init: initTasksPanel   },
-    gantt:     { fn: renderGantt,     endpoint: "tasks"                            },
     agents:    { fn: renderAgents,    endpoint: "agents",   init: initAgentsPanel  },
     content:   { fn: renderContent,   endpoint: "content"                          },
     approvals: { fn: renderApprovals, endpoint: "approvals"                        },
