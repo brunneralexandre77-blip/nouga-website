@@ -1625,7 +1625,9 @@ function initProjectsPanel(data, el) {
     el.querySelectorAll(".project-card").forEach(card => {
         card.addEventListener("click", () => {
             const idx = parseInt(card.dataset.projectIdx, 10);
-            renderProjectDetail(data.projects[idx]);
+            const project = data.projects[idx];
+            console.log(`[Projects] card clicked — idx=${idx}, name="${project?.name}"`);
+            renderProjectDetail(project);
         });
     });
 }
@@ -1828,8 +1830,9 @@ async function renderProjectDetail(project) {
     $("gantt-back").onclick = () => loadPanel("projects");
 
     try {
-        console.log(`[Gantt] fetchData("tasks") starting — render token ${renderToken}`);
+        console.log(`[Gantt] fetchData("tasks") starting — render token ${renderToken}${panelCache["tasks"] ? ` (cache available, age ${Math.round((Date.now() - panelCache["tasks"].ts) / 1000)}s)` : ""}`);
         const tasksData = await fetchData("tasks");
+        panelCache["tasks"] = { data: tasksData, ts: Date.now() };
         console.log(`[Gantt] fetchData("tasks") succeeded — render token ${renderToken}`);
         const allTasks = [
             ...(tasksData.todo        || []),
@@ -1884,7 +1887,35 @@ async function renderProjectDetail(project) {
     } catch(e) {
         console.error(`[Gantt] fetchData("tasks") failed:`, e);
         const ganttBody = $("gantt-body");
-        if (ganttBody) ganttBody.innerHTML = errorBox(`Failed to load tasks: ${e.message}`);
+        if (!ganttBody) return;
+        if (panelCache["tasks"]) {
+            console.warn(`[Gantt] network error — falling back to cached tasks: ${e.message}`);
+            const tasksData = panelCache["tasks"].data;
+            const allTasks = [
+                ...(tasksData.todo        || []),
+                ...(tasksData.in_progress || []),
+                ...(tasksData.done        || []),
+            ];
+            const projKey = project.name.toLowerCase();
+            let tasks = allTasks.filter(t => {
+                const tag  = (t.tag     || "").toLowerCase().replace(/^#/, "");
+                const proj = (t.project || "").toLowerCase();
+                return (tag  && (tag.includes(projKey)  || projKey.includes(tag)))
+                    || (proj && (proj.includes(projKey) || projKey.includes(proj)));
+            });
+            _ganttProject = project;
+            _ganttTasks = tasks;
+            _ganttAssignDates(tasks, project);
+            if (tasks.length === 0) {
+                ganttBody.innerHTML = `<div class="gantt-empty"><span style="font-size:2rem">📭</span>No tasks linked to this project yet.</div>`;
+            } else {
+                ganttBody.innerHTML = renderGanttChart(tasks);
+                initGanttInteractions();
+            }
+            _showStaleIndicator(ganttBody.closest(".gantt-view") || ganttBody, "⚠ Showing cached tasks", "var(--yellow,#f5a623)", 5000);
+        } else {
+            ganttBody.innerHTML = errorBox(`Failed to load tasks: ${e.message}`);
+        }
     }
 }
 
@@ -4166,13 +4197,21 @@ async function loadPanel(panelId) {
         }
         // Success — update cache and render
         panelCache[panelId] = { data, html, ts: Date.now() };
-        el.innerHTML = html;
-        if (panel.init) panel.init(data, el);
-        lastUpdate = new Date();
-        updateStatusBar();
+        // Don't overwrite an active Gantt view (user clicked a project while this fetch was in flight)
+        if (panelId === "projects" && $("gantt-body")) {
+            console.log("[loadPanel] projects fetch succeeded but Gantt is active — cache updated, skipping render");
+        } else {
+            el.innerHTML = html;
+            if (panel.init) panel.init(data, el);
+            lastUpdate = new Date();
+            updateStatusBar();
+        }
     } catch(e) {
         console.error(`[loadPanel] failed to load panel "${panelId}":`, e);
-        if (hasCache) {
+        // Don't overwrite an active Gantt view with a projects-panel error
+        if (panelId === "projects" && $("gantt-body")) {
+            console.log("[loadPanel] projects fetch failed but Gantt is active — suppressing error overlay");
+        } else if (hasCache) {
             // Content already loaded once — restore it and show a non-intrusive warning
             el.innerHTML = panelCache[panelId].html;
             if (panel.init) panel.init(panelCache[panelId].data, el);
