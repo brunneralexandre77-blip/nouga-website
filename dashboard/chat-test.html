@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Test</title>
+</head>
+<body>
+    <h1>Chat Test Page</h1>
+    <div id="status">Testing...</div>
+    <div id="result"></div>
+    
+    <script>
+        const API_HOST = "https://api.nouga.ai";
+        const API = `${API_HOST}/api`;
+        
+        async function testChat() {
+            const status = document.getElementById('status');
+            const result = document.getElementById('result');
+            
+            try {
+                // Test 1: Auth status
+                status.textContent = "Testing auth...";
+                const authRes = await fetch(`${API_HOST}/api/auth/status`, { 
+                    credentials: "include" 
+                });
+                const authData = await authRes.json();
+                result.innerHTML += `<p>Auth: ${JSON.stringify(authData)}</p>`;
+                
+                if (!authData.authenticated) {
+                    result.innerHTML += `<p style="color:red">Not authenticated! Please login first.</p>`;
+                    return;
+                }
+                
+                // Test 2: Send chat message
+                status.textContent = "Sending chat message...";
+                const chatRes = await fetch(`${API}/agents/lara/chat`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ message: "Test from debug page" }),
+                    credentials: "include"
+                });
+                
+                result.innerHTML += `<p>Chat HTTP: ${chatRes.status}</p>`;
+                
+                const chatData = await chatRes.json();
+                result.innerHTML += `<p>Chat response: ${JSON.stringify(chatData)}</p>`;
+                
+                status.textContent = "Success!";
+                
+            } catch (e) {
+                status.textContent = "Error!";
+                result.innerHTML += `<p style="color:red">Error: ${e.name}: ${e.message}</p>`;
+                result.innerHTML += `<p style="color:red">Stack: ${e.stack}</p>`;
+            }
+        }
+        
+        testChat();
+    </script>
+</body>
+</html>
