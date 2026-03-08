@@ -270,6 +270,7 @@ async function apiPut(endpoint, body) {
 async function apiDelete(endpoint) {
     const res = await fetch(`${API}/${endpoint}`, {
         method: "DELETE",
+        credentials: "include",
         signal: AbortSignal.timeout(8000),
     });
     const json = await res.json();
@@ -4181,8 +4182,9 @@ async function loadPanel(panelId) {
     if (!hasCache) {
         // First load: show spinner (no content yet)
         el.innerHTML = loading();
-    } else {
+    } else if (!(panelId === "projects" && $("gantt-body"))) {
         // Subsequent refresh: keep existing content, show a subtle "refreshing" badge
+        // (but skip if the user is currently viewing the Gantt — don't spam the Gantt with a badge)
         _showStaleIndicator(el, "↻ refreshing…", "var(--yellow,#f5a623)");
     }
 
