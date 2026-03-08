@@ -236,6 +236,8 @@ body {
     transition: border-color 0.2s;
 }
 .card:hover { border-color: var(--border2); }
+.project-card:hover { border-color: var(--blue); background: var(--bg2); }
+.project-card:active { transform: scale(0.995); }
 
 .card-title {
     font-size: 0.78rem;
