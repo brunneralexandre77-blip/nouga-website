@@ -2978,7 +2978,7 @@ function renderTeam(d) {
     };
     return `
         <div class="panel-header">
-            <div class="panel-title">🏗️ Team</div>
+            <div class="panel-title">🏗️ Company Goals</div>
             <div class="panel-subtitle">Headcount: ${d.headcount} · Org structure</div>
         </div>
         <div class="card" style="margin-bottom:16px">
