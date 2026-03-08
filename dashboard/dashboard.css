@@ -348,6 +348,19 @@ body {
     gap: 14px;
 }
 
+/* ── Task filter bar ── */
+.task-filter-bar {
+    display: flex; gap: 6px; flex-wrap: wrap;
+    padding: 10px 0 14px;
+}
+.task-filter-btn {
+    padding: 4px 12px; border-radius: 20px; border: 1px solid var(--border1);
+    background: var(--bg2); color: var(--text3); font-size: 0.75rem; cursor: pointer;
+    transition: all 0.15s;
+}
+.task-filter-btn:hover { border-color: var(--blue2); color: var(--text1); }
+.task-filter-btn.active { background: var(--blue2); border-color: var(--blue2); color: #fff; }
+
 /* ── Kanban ── */
 .kanban { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
 .kanban-4col { grid-template-columns: 260px repeat(3,1fr); }
@@ -718,6 +731,29 @@ body {
 .form-input:focus, .form-select:focus, .form-textarea:focus { border-color: var(--blue); }
 .form-select { appearance: none; cursor: pointer; }
 .form-textarea { resize: vertical; min-height: 80px; line-height: 1.5; }
+
+/* ── Accessibility: focus states ── */
+.btn:focus-visible,
+.nav-item:focus-visible,
+.notif-bell:focus-visible,
+.modal-close:focus-visible,
+.org-node-btn:focus-visible,
+.agent-tab-btn:focus-visible,
+.task-filter-btn:focus-visible,
+.kanban-add-btn:focus-visible,
+.pl-card:focus-visible {
+    outline: 2px solid var(--blue2);
+    outline-offset: 2px;
+}
+
+/* ── Accessibility: reduced motion ── */
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+    }
+}
 
 /* ── Buttons ── */
 .btn {

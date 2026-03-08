@@ -2,8 +2,23 @@
    Nouga Mission Control — Dashboard JS  (Phase 2)
 ============================================================ */
 
-const API    = "http://100.77.150.110:5001/api";
-const WS_URL = "http://100.77.150.110:5001";
+const API_HOST = "https://api.nouga.ai";
+const API    = `${API_HOST}/api`;
+const WS_URL = API_HOST;
+
+async function checkAuth() {
+    try {
+        const res = await fetch(`${API_HOST}/api/auth/status`, { credentials: "include" });
+        if (res.status === 401) {
+            window.location.href = "/dashboard/login.html";
+            return false;
+        }
+        return true;
+    } catch (e) {
+        // Network error — continue in local/offline mode
+        return true;
+    }
+}
 const REFRESH_MS = 30000;
 let activePanel = "tasks";
 let refreshTimer = null;
@@ -1674,9 +1689,9 @@ function initOfficePanel(data, container) {
     ctx.imageSmoothingEnabled = false;
 
     // ── Layout constants ─────────────────────────────────────────
-    const DW = 92, DSH = 28, DFH = 10, MH = 34, AH = 26;
-    const HY_UP  = 75 + MH + DSH + DFH + 6;   // 153 — upper desk agent home y
-    const HY_LOW = 232 + MH + DSH + DFH + 6;  // 310 — lower desk agent home y
+    const DW = 92, DSH = 28, DFH = 10, MH = 34, AH = 36;
+    const HY_UP  = 75 + MH + DSH + DFH - 4;   // 143 — upper desk agent home y
+    const HY_LOW = 232 + MH + DSH + DFH - 4;  // 300 — lower desk agent home y
 
     const ZONES = {
         upperDesks: [
@@ -1814,6 +1829,26 @@ function initOfficePanel(data, container) {
     // ── Particles ─────────────────────────────────────────────────
     const particles = [];
     let steamTick = 0;
+
+    // ── Camera (pan + zoom) ───────────────────────────────────────
+    let cam = { x: 0, y: 0, scale: 1.0 };
+    let _drag = null;       // { sx, sy, cx, cy }
+    let _dragMoved = false;
+
+    // ── Dust motes (day sunbeam zones) ────────────────────────────
+    const dustMotes = Array.from({ length: 22 }, () => ({
+        x: Math.random() * CW,
+        y: 60 + Math.random() * 150,
+        vx: (Math.random() - 0.5) * 0.04,
+        vy: -(Math.random() * 0.025 + 0.005),
+    }));
+
+    function _clampCam() {
+        const extraW = Math.max(0, CW * (cam.scale - 1));
+        const extraH = Math.max(0, CH * (cam.scale - 1));
+        cam.x = Math.max(-extraW - 50, Math.min(50, cam.x));
+        cam.y = Math.max(-extraH - 50, Math.min(50, cam.y));
+    }
     function spawnSteam() {
         for (let i = 0; i < 2; i++) particles.push({
             x: CM_X + 18 + (Math.random() - 0.5) * 8,
@@ -2006,36 +2041,46 @@ function initOfficePanel(data, container) {
         ctx.fillRect(268, 350,   4, 90); // break room west (east shadow)
     }
 
-    function drawPlant(x, y, type) {
+    function drawPlant(x, y, type, sway = 0) {
+        const sw = sway;
         if (type === "snake") {
+            // Pot (fixed)
             px(x+2, y+16, 12, 8, "#c2714a"); px(x+3, y+17, 10, 6, "#d4835a");
             px(x+1, y+15, 14, 3, "#b86040");
-            px(x+5, y,    3, 16, "#3d6b4a"); px(x+6, y+1,   1, 14, "#5a9a6a");
-            px(x+9, y+3,  3, 14, "#2e5538"); px(x+10, y+4,  1, 12, "#4a8058");
-            px(x+3, y+4,  2, 12, "#4a7040"); px(x+4,  y+5,  1, 10, "#5e9050");
+            // Leaves (sway)
+            px(x+5+sw, y,    3, 16, "#3d6b4a"); px(x+6+sw, y+1,   1, 14, "#5a9a6a");
+            px(x+9+sw, y+3,  3, 14, "#2e5538"); px(x+10+sw, y+4,  1, 12, "#4a8058");
+            px(x+3+sw, y+4,  2, 12, "#4a7040"); px(x+4+sw,  y+5,  1, 10, "#5e9050");
         } else if (type === "cactus") {
+            // Pot (fixed)
             px(x+3, y+14, 8, 8, "#c2714a"); px(x+4, y+15, 6, 6, "#d4835a");
-            px(x+4, y+4,  6, 12, "#3e6b3a"); px(x+5, y+5,  4, 10, "#4e8848");
-            px(x+2, y+7,  3,  4, "#3e6b3a"); px(x+1, y+6,  2,  2, "#3e6b3a");
-            px(x+9, y+6,  3,  4, "#3e6b3a"); px(x+11,y+5,  2,  2, "#3e6b3a");
+            // Body + arms (sway)
+            px(x+4+sw, y+4,  6, 12, "#3e6b3a"); px(x+5+sw, y+5,  4, 10, "#4e8848");
+            px(x+2+sw, y+7,  3,  4, "#3e6b3a"); px(x+1+sw, y+6,  2,  2, "#3e6b3a");
+            px(x+9+sw, y+6,  3,  4, "#3e6b3a"); px(x+11+sw,y+5,  2,  2, "#3e6b3a");
             ctx.fillStyle = "#d8cc96";
-            [[5,5],[5,9],[9,7],[9,11],[7,4]].forEach(([sx,sy]) => ctx.fillRect(x+sx, y+sy, 1, 2));
+            [[5,5],[5,9],[9,7],[9,11],[7,4]].forEach(([sx,sy]) => ctx.fillRect(x+sx+sw, y+sy, 1, 2));
         } else if (type === "fiddle") {
+            // Pot (fixed)
             px(x+3, y+26, 14, 8, "#c2714a"); px(x+4, y+27, 12, 6, "#d4835a");
             px(x+2, y+25, 16,  3, "#b86040");
-            px(x+9, y+10,  2, 18, "#5a4030");
-            ctx.fillStyle = "#2e5a2a"; ctx.beginPath(); ctx.ellipse(x+7, y+10, 7, 10, -0.2, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "#3e7838"; ctx.beginPath(); ctx.ellipse(x+7, y+10, 5,  8, -0.2, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "#2e5a2a"; ctx.beginPath(); ctx.ellipse(x+13,y+16, 6,  9,  0.3, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "#3e7838"; ctx.beginPath(); ctx.ellipse(x+13,y+16, 4,  7,  0.3, 0, Math.PI*2); ctx.fill();
+            // Trunk (half sway)
+            px(x+9+sw/2, y+10, 2, 18, "#5a4030");
+            // Leaves (full sway)
+            ctx.fillStyle = "#2e5a2a"; ctx.beginPath(); ctx.ellipse(x+7+sw, y+10, 7, 10, -0.2, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "#3e7838"; ctx.beginPath(); ctx.ellipse(x+7+sw, y+10, 5,  8, -0.2, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "#2e5a2a"; ctx.beginPath(); ctx.ellipse(x+13+sw, y+16, 6, 9, 0.3, 0, Math.PI*2); ctx.fill();
+            ctx.fillStyle = "#3e7838"; ctx.beginPath(); ctx.ellipse(x+13+sw, y+16, 4, 7, 0.3, 0, Math.PI*2); ctx.fill();
         } else if (type === "pothos") {
+            // Pot (fixed)
             px(x+3, y,   8, 5, "#c2714a"); px(x+4, y+1, 6, 3, "#d4835a");
+            // Vines + leaves (sway)
             ctx.strokeStyle = "#3e6b3a"; ctx.lineWidth = 1;
-            ctx.beginPath(); ctx.moveTo(x+7, y+5); ctx.bezierCurveTo(x+4,y+10,x+2,y+16,x+1,y+22); ctx.stroke();
-            ctx.beginPath(); ctx.moveTo(x+7, y+5); ctx.bezierCurveTo(x+10,y+12,x+12,y+18,x+13,y+24); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(x+7+sw, y+5); ctx.bezierCurveTo(x+4+sw,y+10,x+2+sw,y+16,x+1+sw,y+22); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(x+7+sw, y+5); ctx.bezierCurveTo(x+10+sw,y+12,x+12+sw,y+18,x+13+sw,y+24); ctx.stroke();
             [[2,13],[0,21],[12,17],[14,23],[7,9]].forEach(([lx,ly]) => {
-                ctx.fillStyle = "#3e6b3a"; ctx.beginPath(); ctx.ellipse(x+lx, y+ly, 4, 3, -0.4, 0, Math.PI*2); ctx.fill();
-                ctx.fillStyle = "#5a9a55"; ctx.beginPath(); ctx.ellipse(x+lx, y+ly, 2, 2, 0, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = "#3e6b3a"; ctx.beginPath(); ctx.ellipse(x+lx+sw, y+ly, 4, 3, -0.4, 0, Math.PI*2); ctx.fill();
+                ctx.fillStyle = "#5a9a55"; ctx.beginPath(); ctx.ellipse(x+lx+sw, y+ly, 2, 2, 0, 0, Math.PI*2); ctx.fill();
             });
         }
     }
@@ -2146,71 +2191,148 @@ function initOfficePanel(data, container) {
 
     function drawDesk(x, y, agentId) {
         const gc = SCREEN_COLORS[agentId] || "#00d4ff";
-        // Desk shadow
+
+        // ── Shadow ───────────────────────────────────────────────────
         ctx.fillStyle = "rgba(0,0,0,0.18)"; ctx.fillRect(x+4, y+MH+DSH+DFH+1, DW-8, 5);
-        // Ergonomic chair behind desk
+
+        // ── Chair ────────────────────────────────────────────────────
         const cy2 = y+MH+DSH+DFH+4;
-        px(x+20, cy2,    52, 4,  "#8a7a6a");  // back top rail
-        px(x+22, cy2+4,  48, 18, "#9a8a7a");  // cushion back
-        px(x+24, cy2+6,  44, 14, "#a89888");  // highlight
-        px(x+26, cy2+22,  8,  5, "#7a6a5a");  // left armrest
-        px(x+DW-34, cy2+22, 8, 5, "#7a6a5a"); // right armrest
-        // Monitor stand
+        px(x+20, cy2,    52, 4,  "#8a7a6a");
+        px(x+22, cy2+4,  48, 18, "#9a8a7a");
+        px(x+24, cy2+6,  44, 14, "#a89888");
+        px(x+26, cy2+22,  8,  5, "#7a6a5a");
+        px(x+DW-34, cy2+22, 8, 5, "#7a6a5a");
+        // Wheels (5)
+        for (let wi = 0; wi < 5; wi++) {
+            px(x+22+wi*11, cy2+28, 5, 5, "#444");
+            px(x+23+wi*11, cy2+28, 3, 5, "#666");
+        }
+
+        // ── Monitor stand ────────────────────────────────────────────
         px(x+34, y+MH-4, 10, 6, "#c0b8b0");
-        // Monitor casing — modern light gray
+
+        // ── Monitor ──────────────────────────────────────────────────
         px(x+10, y, DW-20, MH-2, "#ddd8d0");
         px(x+12, y+2, DW-24, MH-6, "#0a0a1a");
-        // Screen content
         const bt = Math.floor(Date.now() / 350);
         for (let row = 0; row < 3; row++) for (let col = 0; col < 5; col++) {
             if ((bt + row + col) % 3 !== 0) px(x+14+col*11, y+5+row*7, 8, 4, gc + "bb");
         }
-        ctx.fillStyle = gc + "16"; ctx.fillRect(x+8, y+MH-7, DW-16, 10);
+        ctx.fillStyle = gc + "22"; ctx.fillRect(x+8, y+MH-7, DW-16, 10);
         ctx.strokeStyle = "#b8b0a8"; ctx.lineWidth = 2; ctx.strokeRect(x+10, y, DW-20, MH-2);
-        // Desk surface — warm white
+
+        // ── Desk surface ─────────────────────────────────────────────
         px(x, y+MH, DW, DSH, "#e8e0d4");
         px(x+2, y+MH+2, DW-4, DSH-4, "#f2ece4");
-        // Keyboard (light)
+
+        // Screen glow on desk surface
+        const glowGrad = ctx.createRadialGradient(x+DW/2, y+MH, 0, x+DW/2, y+MH, 32);
+        glowGrad.addColorStop(0, gc + "1a"); glowGrad.addColorStop(1, gc + "00");
+        ctx.fillStyle = glowGrad; ctx.fillRect(x+5, y+MH, DW-10, 18);
+
+        // ── Desk lamp (rear-right of surface) ────────────────────────
+        px(x+82, y+MH+4, 2, DSH-6, "#8a8080");        // pole
+        px(x+73, y+MH+4,  9, 2,    "#8a8080");         // arm
+        ctx.fillStyle = "#f0e870";
+        ctx.beginPath();
+        ctx.moveTo(x+70, y+MH+4); ctx.lineTo(x+86, y+MH+4);
+        ctx.lineTo(x+84, y+MH-4); ctx.lineTo(x+72, y+MH-4);
+        ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = "#c8b840"; ctx.lineWidth = 0.5; ctx.stroke();
+        px(x+76, y+MH+3, 4, 2, "#fff8a0");             // bulb
+
+        // ── Keyboard + Mouse ─────────────────────────────────────────
         px(x+18, y+MH+6, 38, 10, "#d0c8c0"); px(x+20, y+MH+8, 34, 6, "#e0d8d0");
-        // Mouse
-        px(x+62, y+MH+7, 10, 9, "#d0c8c0"); px(x+63, y+MH+8, 8, 7, "#e0d8d0");
-        // Per-agent desk items
+        px(x+62, y+MH+7, 10,  9, "#d0c8c0"); px(x+63, y+MH+8,  8, 7, "#e0d8d0");
+
+        // ── Per-agent items ──────────────────────────────────────────
         if (["gordon","lara","milfred"].includes(agentId)) {
-            px(x+76, y+MH+6,  6, 9, "#c2714a"); px(x+77, y+MH+7,  4, 7, "#d4835a");
-            px(x+77, y+MH+3,  3, 5, "#4a7c59"); px(x+79, y+MH+2,  2, 6, "#3d6b4a");
+            px(x+6, y+MH+6,  6, 9, "#c2714a"); px(x+7, y+MH+7,  4, 7, "#d4835a");
+            px(x+7, y+MH+3,  3, 5, "#4a7c59"); px(x+9, y+MH+2,  2, 6, "#3d6b4a");
         }
         if (["ernst","claude","alex","eva"].includes(agentId)) {
-            px(x+76, y+MH+8,  8, 8, "#f0e8dc"); px(x+77, y+MH+9,  6, 6, "#4a1a08");
-            px(x+84, y+MH+10, 2, 4, "#f0e8dc");
+            px(x+6, y+MH+8,  8, 8, "#f0e8dc"); px(x+7, y+MH+9,  6, 6, "#4a1a08");
+            px(x+14, y+MH+10, 2, 4, "#f0e8dc");
         }
-        // Desk front face + legs
+
+        // ── Cable ────────────────────────────────────────────────────
+        ctx.strokeStyle = "rgba(60,50,40,0.4)"; ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x+14, y+MH);
+        ctx.bezierCurveTo(x+10, y+MH+DSH, x+6, y+MH+DSH+DFH, x+8, y+MH+DSH+DFH+8);
+        ctx.stroke();
+
+        // ── Desk front face + drawers + legs ─────────────────────────
         px(x, y+MH+DSH, DW, DFH, "#d8d0c4");
-        px(x+4,      y+MH+DSH, 6, DFH+2, "#c8c0b4");
-        px(x+DW-10,  y+MH+DSH, 6, DFH+2, "#c8c0b4");
+        px(x+4,  y+MH+DSH+1, 40, DFH-3, "#ccc4b8");   // left drawer
+        px(x+48, y+MH+DSH+1, 40, DFH-3, "#ccc4b8");   // right drawer
+        ctx.fillStyle = "#9a8878";
+        ctx.beginPath(); ctx.arc(x+24, y+MH+DSH+DFH/2, 2.5, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x+68, y+MH+DSH+DFH/2, 2.5, 0, Math.PI*2); ctx.fill();
+        px(x+4,     y+MH+DSH, 6, DFH+2, "#c8c0b4");
+        px(x+DW-10, y+MH+DSH, 6, DFH+2, "#c8c0b4");
     }
 
     function drawCoffeeRoom(x, y) {
         const { w, h } = ZONES.coffee;
-        // Floor handled by drawFloor (wood planks). Add border + label.
         ctx.strokeStyle = "#c8920a"; ctx.lineWidth = 1.5;
         ctx.setLineDash([5, 4]); ctx.strokeRect(x+1, y+1, w-2, h-2); ctx.setLineDash([]);
         ctx.fillStyle = "#7c5a08"; ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
         ctx.fillText("BREAK ROOM  ☕", x + w/2, y + 14);
-        // Counter surface (left of machine)
+        // Counter surface
         px(x+6, y+52, 72, 14, "#d4b896"); px(x+8, y+54, 68, 10, "#e0c8a8");
-        // Couch — right side of break room
+        // Couch
         const cx = x + 148, bcy = y + 18;
-        px(cx,    bcy,     84, 8,  "#6a5a80"); px(cx+1,  bcy+1,  82, 6,  "#7a6a94"); // back
-        px(cx,    bcy+8,   84, 36, "#6a5a80");                                         // seat body
-        for (let seg = 0; seg < 3; seg++) {                                              // cushions
+        // Wall-mounted TV above couch
+        const tvX = cx + 8, tvY = y + 2;
+        px(tvX,   tvY,    56, 26, "#111111");         // bezel
+        px(tvX+2, tvY+2,  52, 21, "#08080e");         // screen
+        const tvF = Math.floor(Date.now() / 3500) % 4;
+        if (tvF === 0) {
+            // Green chart
+            px(tvX+3, tvY+3, 50, 7, "#0a1a0a");
+            [6,9,7,11,8,13,10].forEach((bh, i) => px(tvX+4+i*7, tvY+19-bh, 5, bh, "#10b98144"));
+            ctx.fillStyle = "#10b981"; ctx.font = "5px monospace"; ctx.textAlign = "center";
+            ctx.fillText("+4.2% PnL", tvX+29, tvY+9);
+        } else if (tvF === 1) {
+            // Blue dashboard
+            px(tvX+3, tvY+3, 50, 7, "#041228");
+            [4,7,5,9,6,10,8].forEach((bh, i) => px(tvX+4+i*7, tvY+19-bh, 5, bh, "#3b82f655"));
+            ctx.fillStyle = "#60a5fa"; ctx.font = "5px monospace"; ctx.textAlign = "center";
+            ctx.fillText("NOUGA TV", tvX+29, tvY+9);
+        } else if (tvF === 2) {
+            // News ticker
+            px(tvX+3, tvY+3, 50, 18, "#080820");
+            ctx.fillStyle = "#a78bfa"; ctx.font = "5px monospace"; ctx.textAlign = "center";
+            ctx.fillText("OFFICE NEWS", tvX+29, tvY+9);
+            px(tvX+3, tvY+15, 50, 5, "#2a1a40");
+            ctx.fillStyle = "#e0d0ff"; ctx.font = "4px monospace"; ctx.textAlign = "left";
+            ctx.fillText("Sprint 8 on track ✓", tvX+5, tvY+19);
+        } else {
+            // Weather
+            px(tvX+3, tvY+3, 50, 18, "#0a1520");
+            ctx.fillStyle = "#7dd3fc"; ctx.font = "7px monospace"; ctx.textAlign = "center";
+            ctx.fillText("☁ 72°F", tvX+29, tvY+13);
+        }
+        // TV glow on wall
+        ctx.fillStyle = "rgba(60,80,160,0.06)"; ctx.fillRect(cx+4, y+28, 68, 12);
+
+        px(cx,    bcy,     84, 8,  "#6a5a80"); px(cx+1,  bcy+1,  82, 6,  "#7a6a94");
+        px(cx,    bcy+8,   84, 36, "#6a5a80");
+        for (let seg = 0; seg < 3; seg++) {
             px(cx+2+seg*27, bcy+10, 25, 30, "#8a7aac"); px(cx+3+seg*27, bcy+11, 23, 28, "#9a8abc");
         }
-        px(cx-6,  bcy,     8, 44, "#6a5a80"); px(cx-5,  bcy+2,  6, 40, "#7a6a94"); // left armrest
-        px(cx+84, bcy,     8, 44, "#6a5a80"); px(cx+85, bcy+2,  6, 40, "#7a6a94"); // right armrest
-        px(cx,    bcy+44,  4,  5, "#4a3a5a"); px(cx+80, bcy+44, 4,  5, "#4a3a5a"); // legs
-        // Low coffee table in front of couch
+        // Throw pillow on couch
+        px(cx+58, bcy+12, 18, 18, "#c4a8d8"); px(cx+60, bcy+14, 14, 14, "#d4b8e8");
+        px(cx-6,  bcy,     8, 44, "#6a5a80"); px(cx-5,  bcy+2,  6, 40, "#7a6a94");
+        px(cx+84, bcy,     8, 44, "#6a5a80"); px(cx+85, bcy+2,  6, 40, "#7a6a94");
+        px(cx,    bcy+44,  4,  5, "#4a3a5a"); px(cx+80, bcy+44, 4,  5, "#4a3a5a");
+        // Coffee table
         px(cx+8,  bcy+52, 68,  5, "#c8a878"); px(cx+10, bcy+57, 64,  2, "#a07848");
         px(cx+12, bcy+55,  4,  4, "#a07848"); px(cx+68, bcy+55,  4,  4, "#a07848");
+        // Items on coffee table
+        px(cx+18, bcy+50, 10, 4, "#f0e8dc"); px(cx+19, bcy+51, 8, 2, "#4a1a08"); // mug
+        px(cx+32, bcy+50, 16, 4, "#e8e4d8"); // magazine
     }
 
     function drawCoffeeMachine(x, y) {
@@ -2279,128 +2401,198 @@ function initOfficePanel(data, container) {
     function drawAgent(a) {
         if (a.hidden) return;
         const ax = Math.round(a.x), ay = Math.round(a.y);
+        // 20 × 36 hi-bit sprite — center x = ax+10, bottom y = ay+35
         const wf = Math.floor(a.frame / 6) % 4;
-        const lL = a.moving ? (wf===1 ?  3 : wf===3 ? -3 : 0) : 0;
-        const lR = a.moving ? (wf===1 ? -3 : wf===3 ?  3 : 0) : 0;
+        const lL = a.moving ? (wf===1 ?  4 : wf===3 ? -4 : 0) : 0;  // left leg offset
+        const lR = a.moving ? (wf===1 ? -4 : wf===3 ?  4 : 0) : 0;  // right leg offset
+        const aL = a.moving ? (wf===1 ? -3 : wf===3 ?  3 : 0) : 0;  // left arm swing
+        const aR = a.moving ? (wf===1 ?  3 : wf===3 ? -3 : 0) : 0;  // right arm swing
+        const ta = a.state === "typing" ? (Math.floor(a.frame / 5) % 2) * 2 : 0;
 
-        // Soft shadow ellipse
+        // ── Shadow ellipse ─────────────────────────────────────────
         ctx.fillStyle = "rgba(0,0,0,0.18)";
-        ctx.beginPath(); ctx.ellipse(ax+8, ay+AH+3, 10, 3, 0, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(ax+10, ay+AH+2, 11, 3.5, 0, 0, Math.PI*2); ctx.fill();
 
-        // Legs / shoes
-        const pantC = "#1e1e28";
-        px(ax+2,  ay+16+lL, 5, 10, pantC); px(ax+1,  ay+25+lL, 7, 3, "#3a3a3a");
-        px(ax+9,  ay+16+lR, 5, 10, pantC); px(ax+9,  ay+25+lR, 7, 3, "#3a3a3a");
+        // ── Legs (rows 26–32) ─────────────────────────────────────
+        px(ax+3,  ay+26+lL, 6, 8, "#1e1e28");
+        px(ax+3,  ay+26+lL, 2, 8, "rgba(255,255,255,0.10)");  // left crease
+        px(ax+11, ay+26+lR, 6, 8, "#1e1e28");
+        px(ax+15, ay+26+lR, 2, 8, "rgba(255,255,255,0.10)");  // right crease
 
-        // Body — shirt with visible collar
-        px(ax+1, ay+9, 14, 10, a.shirtC);
-        px(ax+3, ay+9,  4,  3, a.shirtC + "aa");  // collar highlight
-        px(ax+6, ay+9,  4,  8, a.skinC + "80");   // neck peek
+        // ── Shoes (rows 33–35) ────────────────────────────────────
+        px(ax+2,  ay+33+lL, 7, 3, "#2a2020");
+        px(ax+2,  ay+33+lL, 5, 1, "rgba(255,255,255,0.15)");  // toe highlight
+        px(ax+11, ay+33+lR, 7, 3, "#2a2020");
+        px(ax+11, ay+33+lR, 5, 1, "rgba(255,255,255,0.15)");
 
-        // Arms — state-dependent
-        const ta = a.state === "typing" ? (Math.floor(a.frame/5) % 2) * 2 : 0;
+        // ── Belt (rows 25–26) ─────────────────────────────────────
+        px(ax+3, ay+25, 14, 2, "#3a3020");
+        px(ax+3, ay+25,  5, 1, "rgba(255,255,255,0.12)");     // buckle glint
+
+        // ── Body / shirt (rows 15–25) ─────────────────────────────
+        px(ax+3,  ay+15, 14, 11, a.shirtC);
+        px(ax+4,  ay+16,  3,  9, "rgba(255,255,255,0.18)");   // shirt highlight
+        px(ax+14, ay+16,  2,  9, "rgba(0,0,0,0.18)");         // shirt shadow
+        px(ax+8,  ay+15,  4,  5, a.skinC + "88");             // collar/neck
+
+        // ── Arms ──────────────────────────────────────────────────
         if (a.state === "thinking") {
-            px(ax-2, ay+10,  4, 8, a.shirtC);
-            px(ax+14, ay+8,  4, 6, a.shirtC);
-            px(ax+14, ay+13, 4, 2, a.skinC);        // hand at chin
+            px(ax+0,  ay+16+aL, 3, 10, a.shirtC);             // left arm down
+            px(ax+17, ay+14+aR, 3,  8, a.shirtC);             // right arm raised
+            px(ax+17, ay+21,    3,  3, a.skinC);               // hand at chin
         } else if (a.state === "reading") {
-            px(ax-3,  ay+10, 4, 6, a.shirtC);
-            px(ax+15, ay+10, 4, 6, a.shirtC);
-            px(ax+1,  ay+15, 14, 8, "#1a1a2e");     // tablet
-            px(ax+2,  ay+16, 12, 6, "#00aaff22");
+            px(ax+0,  ay+16,    3,  8, a.shirtC);
+            px(ax+17, ay+16,    3,  8, a.shirtC);
+            px(ax+2,  ay+22,   16, 11, "#0f172a");             // tablet body
+            px(ax+3,  ay+23,   14,  9, "#1e3a5f");             // screen
+            px(ax+3,  ay+23,   14,  2, "rgba(96,165,250,0.20)"); // screen glare
+            px(ax+4,  ay+25,    6,  1, "rgba(255,255,255,0.15)");
         } else if (a.state === "waiting") {
-            px(ax-2,  ay+10, 5, 6, a.shirtC);
-            px(ax+13, ay+10, 5, 6, a.shirtC);
-            px(ax+1,  ay+15, 14, 3, a.shirtC);      // crossed arms bar
+            px(ax+0,  ay+16,    3,  8, a.shirtC);
+            px(ax+17, ay+16,    3,  8, a.shirtC);
+            px(ax+2,  ay+21,   16,  4, a.shirtC);              // crossed arms
+            px(ax+2,  ay+22,   16,  1, "rgba(0,0,0,0.15)");
         } else {
-            px(ax-2,  ay+10+ta, 4, 8, a.shirtC);
-            px(ax+14, ay+10+ta, 4, 8, a.shirtC);
+            px(ax+0,  ay+16+aL+ta, 3, 10, a.shirtC);
+            px(ax+17, ay+16+aR+ta, 3, 10, a.shirtC);
         }
 
-        // Head — rounded (pixel-corner softening)
-        px(ax+3, ay,    10, 12, a.skinC);
-        px(ax+2, ay+1,  12, 10, a.skinC);
-        px(ax+2, ay+11,  1,  1, a.skinC);
-        px(ax+13, ay+11, 1,  1, a.skinC);
+        // ── Head skin (rows 2–13) ─────────────────────────────────
+        px(ax+4,  ay+2,  12, 12, a.skinC);   // center
+        px(ax+3,  ay+3,  14, 10, a.skinC);   // wider middle
+        px(ax+3,  ay+12, 14,  1, "rgba(0,0,0,0.12)");   // chin shadow
+        px(ax+5,  ay+3,   6,  3, "rgba(255,255,255,0.14)"); // forehead highlight
+        px(ax+4,  ay+7,   2,  3, "rgba(255,255,255,0.10)"); // left cheek
+        px(ax+14, ay+7,   2,  3, "rgba(255,255,255,0.10)"); // right cheek
 
-        // Hair
-        px(ax+2, ay,    12, 4, a.hairC);
-        px(ax+1, ay+1,   2, 5, a.hairC);
-        px(ax+13, ay+1,  2, 5, a.hairC);
-        px(ax+1, ay,     2, 1, a.hairC); px(ax+13, ay, 2, 1, a.hairC); // corner rounding
+        // ── Hair (rows 0–5) ───────────────────────────────────────
+        px(ax+4,  ay+0,  12,  4, a.hairC);   // top cap
+        px(ax+3,  ay+0,   1,  1, a.hairC);   // TL corner
+        px(ax+16, ay+0,   1,  1, a.hairC);   // TR corner
+        px(ax+2,  ay+1,   2,  6, a.hairC);   // left temple
+        px(ax+16, ay+1,   2,  6, a.hairC);   // right temple
+        px(ax+5,  ay+1,   8,  1, "rgba(255,255,255,0.22)"); // crown highlight
+        px(ax+3,  ay+4,  14,  1, "rgba(0,0,0,0.12)");       // underside shadow
         if (a.female) {
-            px(ax+1,  ay+1, 2, 10, a.hairC);        // long side hair
-            px(ax+13, ay+1, 2, 10, a.hairC);
-            px(ax+2,  ay-1, 12,  2, a.hairC);        // extra top
+            px(ax+2,  ay+1,  2, 14, a.hairC); // long left curtain
+            px(ax+16, ay+1,  2, 14, a.hairC); // long right curtain
+            px(ax+4,  ay-2, 12,  3, a.hairC); // extra top / bangs
+            px(ax+5,  ay-2,  8,  1, "rgba(255,255,255,0.18)");
         }
 
-        // Eyes — white sclera + dark pupils
-        px(ax+4, ay+4, 3, 3, "#e8e0d0");   // left sclera
-        px(ax+9, ay+4, 3, 3, "#e8e0d0");   // right sclera
+        // ── Neck (rows 13–15) ─────────────────────────────────────
+        px(ax+8, ay+13, 4, 3, a.skinC);
+
+        // ── Eyes (rows 5–8) ───────────────────────────────────────
+        px(ax+5,  ay+5, 4, 4, "#ede8df");  // left sclera
+        px(ax+11, ay+5, 4, 4, "#ede8df");  // right sclera
         const blinking = a.frame % 180 < 3;
         if (blinking) {
-            px(ax+4, ay+6, 3, 1, "#333"); px(ax+9, ay+6, 3, 1, "#333");
+            px(ax+5,  ay+7, 4, 1, "#333");
+            px(ax+11, ay+7, 4, 1, "#333");
         } else {
-            px(ax+5, ay+5, 2, 2, "#111"); px(ax+10, ay+5, 2, 2, "#111");
+            px(ax+6,  ay+6, 2, 2, "#4e7ca1");  // left iris
+            px(ax+12, ay+6, 2, 2, "#4e7ca1");  // right iris
+            px(ax+6,  ay+6, 1, 1, "#111");     // left pupil
+            px(ax+12, ay+6, 1, 1, "#111");     // right pupil
+            px(ax+7,  ay+6, 1, 1, "rgba(255,255,255,0.75)"); // left eye hl
+            px(ax+13, ay+6, 1, 1, "rgba(255,255,255,0.75)"); // right eye hl
         }
         if (a.female) {
-            px(ax+4,  ay+3, 1, 1, "#111"); px(ax+5,  ay+2, 1, 1, "#111");
-            px(ax+10, ay+3, 1, 1, "#111"); px(ax+11, ay+2, 1, 1, "#111");
+            px(ax+5,  ay+4, 1, 1, "#111"); px(ax+6,  ay+3, 1, 1, "#111"); px(ax+8,  ay+4, 1, 1, "#111");
+            px(ax+11, ay+4, 1, 1, "#111"); px(ax+12, ay+3, 1, 1, "#111"); px(ax+14, ay+4, 1, 1, "#111");
         }
 
-        // Per-agent accessories
+        // ── Nose (row 9) ──────────────────────────────────────────
+        px(ax+9, ay+9, 2, 1, "rgba(0,0,0,0.18)");
+
+        // ── Mouth (rows 11–12) ────────────────────────────────────
+        if (a.state === "coffee" || a.state === "idle") {
+            px(ax+7,  ay+11, 1, 1, "#555");
+            px(ax+8,  ay+12, 4, 1, "#555");
+            px(ax+12, ay+11, 1, 1, "#555");
+        } else {
+            px(ax+7, ay+11, 6, 1, "#888");
+        }
+
+        // ── Accessories ───────────────────────────────────────────
         const props = AGENT_PROPS[a.id] || {};
         if (props.accessory === "glasses") {
-            ctx.strokeStyle = "#555"; ctx.lineWidth = 0.8;
-            ctx.strokeRect(ax+3, ay+4, 4, 3); ctx.strokeRect(ax+9, ay+4, 4, 3);
-            ctx.beginPath(); ctx.moveTo(ax+7, ay+6); ctx.lineTo(ax+9, ay+6); ctx.stroke();
+            ctx.strokeStyle = "#666"; ctx.lineWidth = 0.8;
+            ctx.strokeRect(ax+4, ay+5, 5, 4); ctx.strokeRect(ax+11, ay+5, 5, 4);
+            ctx.beginPath(); ctx.moveTo(ax+9, ay+7); ctx.lineTo(ax+11, ay+7); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(ax+3,  ay+6); ctx.lineTo(ax+2,  ay+8); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(ax+16, ay+6); ctx.lineTo(ax+17, ay+8); ctx.stroke();
         }
         if (props.accessory === "tie") {
-            px(ax+6, ay+9, 4, 8, "#c0392b"); px(ax+7, ay+14, 2, 3, "#8e2015");
+            px(ax+8,  ay+15, 4, 10, "#c0392b");
+            px(ax+9,  ay+20, 2,  4, "#8e2015");
+            px(ax+8,  ay+24, 5,  2, "#c0392b");
         }
         if (props.accessory === "clipboard" && !a.moving) {
-            px(ax-5, ay+11, 6, 9, "#e8dfc8"); px(ax-4, ay+12, 4, 7, "#f5eedc");
-            px(ax-3, ay+11, 4, 1, "#888");
+            px(ax-7, ay+15, 7, 12, "#e8dfc8");
+            px(ax-6, ay+16, 5, 10, "#f5eedc");
+            px(ax-5, ay+15, 3,  1, "#888");
+            px(ax-5, ay+19, 4,  1, "#ccc");
+            px(ax-5, ay+21, 4,  1, "#ccc");
+            px(ax-5, ay+23, 3,  1, "#ccc");
         }
         if (props.accessory === "headset" && !a.moving) {
-            px(ax+13, ay+1, 2, 8, a.hairC); px(ax+14, ay+8, 4, 3, "#444");
+            px(ax+17, ay+2,  2, 10, a.hairC);
+            px(ax+18, ay+11, 4,  3, "#444");
+            px(ax+20, ay+12, 2,  1, "#e0e0e0");
         }
         if (props.accessory === "headphones" && !a.moving) {
-            px(ax+1, ay+2, 14, 2, "#2a2a2a"); px(ax+1, ay+3, 2, 5, "#333"); px(ax+13, ay+3, 2, 5, "#333");
+            px(ax+2,  ay+2, 16, 2, "#2a2a2a");
+            px(ax+2,  ay+3,  2, 6, "#333");
+            px(ax+16, ay+3,  2, 6, "#333");
+            px(ax+2,  ay+8,  3, 4, "#222");
+            px(ax+15, ay+8,  3, 4, "#222");
         }
         if (props.accessory === "phone" && a.state === "idle") {
-            px(ax+15, ay+10, 4, 7, "#1a1a1a"); px(ax+16, ay+11, 2, 5, "#00ccff44");
+            px(ax+19, ay+15, 4, 8, "#1a1a1a");
+            px(ax+20, ay+16, 2, 6, "#00ccff33");
+        }
+        if (props.accessory === "mug" && !a.moving) {
+            px(ax+19, ay+16, 7, 6, "#fff8f0");
+            px(ax+20, ay+17, 5, 4, "#3d1408");
+            px(ax+25, ay+18, 2, 3, "#fff8f0");
         }
 
-        // Thinking dots
+        // ── Thinking dots ─────────────────────────────────────────
         if (a.state === "thinking") {
             const tf = Math.floor(a.frame / 20) % 3;
             ctx.font = "bold 8px monospace"; ctx.textAlign = "center";
             ctx.fillStyle = "#f9a8d4";
-            ctx.fillText([".", "..", "..."][tf], ax+8, ay-16);
+            ctx.fillText([".", "..", "..."][tf], ax+10, ay-18);
         }
 
-        // Mouth
-        if (a.state === "coffee" || a.state === "idle") {
-            px(ax+5,ay+8,6,1,"#555"); px(ax+5,ay+9,2,1,"#555"); px(ax+9,ay+9,2,1,"#555");
-        } else {
-            px(ax+5, ay+8, 6, 1, "#888");
+        // ── Coffee cup (state) ────────────────────────────────────
+        if (a.state === "coffee") {
+            px(ax+19, ay+15, 8, 7, "#fff8f0");
+            px(ax+20, ay+16, 6, 5, "#3d1408");
+            px(ax+25, ay+17, 2, 4, "#fff8f0");
+            if (Math.floor(a.frame / 15) % 2) {
+                ctx.fillStyle = "rgba(255,255,255,0.35)";
+                ctx.beginPath(); ctx.arc(ax+22, ay+13, 1.5, 0, Math.PI*2); ctx.fill();
+                ctx.beginPath(); ctx.arc(ax+24, ay+12, 1,   0, Math.PI*2); ctx.fill();
+            }
         }
 
-        // Name tag
+        // ── Name tag ──────────────────────────────────────────────
         ctx.font = "bold 7px monospace"; ctx.textAlign = "center";
         const tw = ctx.measureText(a.name).width;
-        px(ax+8-Math.round(tw/2)-2, ay-14, Math.round(tw)+4, 11, "rgba(0,0,0,0.72)");
-        ctx.fillStyle = "#fff"; ctx.fillText(a.name, ax+8, ay-5);
+        px(ax+10-Math.round(tw/2)-2, ay-16, Math.round(tw)+4, 11, "rgba(0,0,0,0.72)");
+        ctx.fillStyle = "#fff"; ctx.fillText(a.name, ax+10, ay-7);
 
-        // General speech bubble
+        // ── Speech bubble ─────────────────────────────────────────
         if (a.bubble) {
             const BUBBLE_COLORS = { status:"#e0f2fe", alert:"#fef3c7", complete:"#d1fae5", idle:"#f3e8ff" };
             const bc = BUBBLE_COLORS[a.bubble.type] || "#f0f0f0";
             ctx.font = "6px monospace"; ctx.textAlign = "left";
             const btext = a.bubble.text.slice(0, 18);
             const bw = Math.min(ctx.measureText(btext).width + 8, 90);
-            const bx = ax + 14, by = ay - 26;
+            const bx = ax + 18, by = ay - 28;
             ctx.fillStyle = bc; ctx.fillRect(bx, by, bw, 14);
             ctx.strokeStyle = "rgba(0,0,0,0.2)"; ctx.lineWidth = 1; ctx.strokeRect(bx, by, bw, 14);
             ctx.fillStyle = bc;
@@ -2408,30 +2600,23 @@ function initOfficePanel(data, container) {
             ctx.fillStyle = "#111"; ctx.fillText(btext, bx+4, by+9);
         }
 
-        // Meeting bubble
+        // ── Meeting bubble ────────────────────────────────────────
         if (a.inMeeting && a.state === "meeting") {
             const topic = a.meetingTopic || "…";
             ctx.font = "6px monospace"; ctx.textAlign = "left";
             const bw = Math.min(ctx.measureText(topic).width + 8, 80);
-            const bx = ax + 14, by = a.bubble ? ay - 46 : ay - 26;
+            const bx = ax + 18, by = a.bubble ? ay - 48 : ay - 28;
             px(bx, by, bw, 14, "rgba(255,255,255,0.92)");
             px(bx+6, by+14, 6, 5, "rgba(255,255,255,0.92)");
             ctx.fillStyle = "#111"; ctx.fillText(topic.slice(0, 16), bx+4, by+9);
         }
 
-        // Coffee cup
-        if (a.state === "coffee" || a.apiStatus === "idle") {
-            px(ax+16, ay+10, 7, 6, "#fff8f0");
-            px(ax+17, ay+11, 5, 4, "#3d1408");
-            px(ax+23, ay+12, 2, 3, "#fff8f0");
-        }
-
-        // Status dot
+        // ── Status dot ────────────────────────────────────────────
         const dotC = {busy:"#16a34a", active:"#16a34a", idle:"#f59e0b", offline:"#888"};
         ctx.fillStyle = dotC[a.apiStatus] || (a.moving ? "#3b82f6" : "#16a34a");
-        ctx.beginPath(); ctx.arc(ax+15, ay+1, 3, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(ax+19, ay+1, 3, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = "rgba(255,255,255,0.6)"; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(ax+15, ay+1, 3, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ax+19, ay+1, 3, 0, Math.PI*2); ctx.stroke();
     }
 
     function drawTimeOverlay() {
@@ -2471,6 +2656,15 @@ function initOfficePanel(data, container) {
             const p = particles[i];
             p.x += p.vx; p.y += p.vy; p.life -= p.decay;
             if (p.life <= 0) particles.splice(i, 1);
+        }
+        // Dust motes (daytime)
+        const _h = new Date().getHours();
+        if (_h >= 6 && _h < 19) {
+            dustMotes.forEach(d => {
+                d.x += d.vx; d.y += d.vy;
+                if (d.y < 58) { d.y = 62 + Math.random() * 140; d.x = Math.random() * CW; }
+                if (d.x < 0) d.x = CW; else if (d.x > CW) d.x = 0;
+            });
         }
         agents.forEach(a => {
             a.frame++;
@@ -2547,7 +2741,12 @@ function initOfficePanel(data, container) {
     // ── Render ────────────────────────────────────────────────────
     function render() {
         ctx.clearRect(0, 0, CW, CH);
-        ctx.fillStyle = "#e8e0d0"; ctx.fillRect(0, 0, CW, CH);  // warm base
+        ctx.fillStyle = "#e8e0d0"; ctx.fillRect(0, 0, CW, CH);
+
+        // World — everything inside camera transform
+        ctx.save();
+        ctx.translate(cam.x, cam.y); ctx.scale(cam.scale, cam.scale);
+
         drawFloor();
         drawRoomWalls();
         drawWall();
@@ -2556,45 +2755,96 @@ function initOfficePanel(data, container) {
         ZONES.upperDesks.forEach(d => drawDesk(d.x, d.y, d.agent));
         ZONES.lowerDesks.forEach(d => drawDesk(d.x, d.y, d.agent));
         drawCoffeeMachine(CM_X, CM_Y);
-        // Plants
-        drawPlant(4,   62, "snake");
-        drawPlant(618, 62, "snake");
-        drawPlant(ZONES.coffee.x + 218, ZONES.coffee.y + 28, "cactus");
-        drawPlant(ZONES.meeting.x + 140, ZONES.meeting.y + 102, "fiddle");
-        drawPlant(ZONES.coffee.x - 26, ZONES.coffee.y + 18, "pothos");
+
+        // Plants with sway
+        const sway = Math.sin(Date.now() / 1800) * 1.5;
+        drawPlant(4,   62, "snake",  sway);
+        drawPlant(618, 62, "snake", -sway);
+        drawPlant(ZONES.coffee.x + 218, ZONES.coffee.y + 28, "cactus", sway * 0.6);
+        drawPlant(ZONES.meeting.x + 140, ZONES.meeting.y + 102, "fiddle", sway);
+        drawPlant(ZONES.coffee.x - 26, ZONES.coffee.y + 18, "pothos", sway * 0.8);
+
+        // Dust motes (daytime)
+        const _h = new Date().getHours();
+        if (_h >= 6 && _h < 19) {
+            ctx.fillStyle = "rgba(255,248,210,0.55)";
+            dustMotes.forEach(d => { ctx.beginPath(); ctx.arc(d.x, d.y, 1, 0, Math.PI*2); ctx.fill(); });
+        }
+
         // Steam
         particles.forEach(p => {
             ctx.fillStyle = `rgba(160,130,100,${(p.life*0.4).toFixed(2)})`;
             ctx.fillRect(Math.round(p.x), Math.round(p.y), Math.round(p.r), Math.round(p.r));
         });
+
         drawTimeOverlay();
         [...agents].sort((a,b) => a.y-b.y).forEach(drawAgent);
-        // Subtle scanlines (softer on light bg)
+
+        ctx.restore();  // end camera transform
+
+        // Fixed overlays (screen space)
         ctx.fillStyle = "rgba(0,0,0,0.025)";
         for (let sy = 0; sy < CH; sy += 4) ctx.fillRect(0, sy, CW, 1);
-        // Border
         ctx.strokeStyle = "rgba(0,0,0,0.18)"; ctx.lineWidth = 2;
         ctx.strokeRect(1, 1, CW-2, CH-2);
+
+        // Reset view hint
+        if (cam.x !== 0 || cam.y !== 0 || cam.scale !== 1.0) {
+            ctx.fillStyle = "rgba(0,0,0,0.50)"; ctx.fillRect(CW-70, 6, 64, 16);
+            ctx.fillStyle = "#fff"; ctx.font = "9px monospace"; ctx.textAlign = "center";
+            ctx.fillText("⌂ reset view", CW-38, 18);
+        }
     }
 
-    // ── Hit detection ─────────────────────────────────────────────
-    function hitTest(mx, my) {
-        const a = agents.find(a => mx >= a.x-2 && mx <= a.x+20 && my >= a.y-2 && my <= a.y+AH+5);
+    // ── Hit detection (takes screen coords, converts to world) ────
+    function hitTest(sx, sy) {
+        const wx = (sx - cam.x) / cam.scale, wy = (sy - cam.y) / cam.scale;
+        const a = agents.find(a => wx >= a.x-2 && wx <= a.x+22 && wy >= a.y-2 && wy <= a.y+AH+5);
         if (a) return { type:"agent", a };
         const c = ZONES.coffee;
-        if (mx >= c.x && mx <= c.x+c.w && my >= c.y && my <= c.y+c.h) return { type:"coffee" };
+        if (wx >= c.x && wx <= c.x+c.w && wy >= c.y && wy <= c.y+c.h) return { type:"coffee" };
         const m = ZONES.meeting;
-        if (mx >= m.x && mx <= m.x+m.w && my >= m.y && my <= m.y+m.h) return { type:"meeting" };
+        if (wx >= m.x && wx <= m.x+m.w && wy >= m.y && wy <= m.y+m.h) return { type:"meeting" };
         const allDesks = [...ZONES.upperDesks, ...ZONES.lowerDesks];
-        const d = allDesks.find(d => mx >= d.x && mx <= d.x+DW && my >= d.y && my <= d.y+MH+DSH+DFH);
+        const d = allDesks.find(d => wx >= d.x && wx <= d.x+DW && wy >= d.y && wy <= d.y+MH+DSH+DFH);
         if (d) return { type:"desk", d };
         return null;
     }
 
-    canvas.addEventListener("click", e => {
+    canvas.addEventListener("mousedown", e => {
+        if (e.button !== 0) return;
         const r = canvas.getBoundingClientRect();
-        const mx = (e.clientX-r.left)*(CW/r.width), my = (e.clientY-r.top)*(CH/r.height);
-        const hit = hitTest(mx, my);
+        const sx = (e.clientX-r.left)*(CW/r.width), sy = (e.clientY-r.top)*(CH/r.height);
+        _drag = { sx, sy, cx: cam.x, cy: cam.y };
+        _dragMoved = false;
+        canvas.style.cursor = "grabbing";
+    });
+
+    canvas.addEventListener("mousemove", e => {
+        const r = canvas.getBoundingClientRect();
+        const sx = (e.clientX-r.left)*(CW/r.width), sy = (e.clientY-r.top)*(CH/r.height);
+        if (_drag) {
+            if (Math.abs(sx-_drag.sx) + Math.abs(sy-_drag.sy) > 3) _dragMoved = true;
+            cam.x = _drag.cx + (sx - _drag.sx);
+            cam.y = _drag.cy + (sy - _drag.sy);
+            _clampCam();
+        } else {
+            canvas.style.cursor = hitTest(sx, sy) ? "pointer" : "grab";
+        }
+    });
+
+    canvas.addEventListener("mouseup",    () => { _drag = null; canvas.style.cursor = "grab"; });
+    canvas.addEventListener("mouseleave", () => { _drag = null; });
+
+    canvas.addEventListener("click", e => {
+        if (_dragMoved) { _dragMoved = false; return; }
+        const r = canvas.getBoundingClientRect();
+        const sx = (e.clientX-r.left)*(CW/r.width), sy = (e.clientY-r.top)*(CH/r.height);
+        // Reset button (screen space)
+        if (sx >= CW-70 && sx <= CW-6 && sy >= 6 && sy <= 22) {
+            cam.x = 0; cam.y = 0; cam.scale = 1.0; return;
+        }
+        const hit = hitTest(sx, sy);
         if (!hit) return;
         if (hit.type === "agent") showAgentInfo(hit.a);
         else if (hit.type === "desk") { const a = agents.find(ag => ag.id === hit.d.agent); if (a) showAgentInfo(a); }
@@ -2602,11 +2852,19 @@ function initOfficePanel(data, container) {
         else if (hit.type === "meeting") showMeetingModal();
     });
 
-    canvas.addEventListener("mousemove", e => {
+    canvas.addEventListener("dblclick", () => { cam.x = 0; cam.y = 0; cam.scale = 1.0; _drag = null; });
+
+    canvas.addEventListener("wheel", e => {
+        e.preventDefault();
         const r = canvas.getBoundingClientRect();
-        const mx = (e.clientX-r.left)*(CW/r.width), my = (e.clientY-r.top)*(CH/r.height);
-        canvas.style.cursor = hitTest(mx, my) ? "pointer" : "default";
-    });
+        const sx = (e.clientX-r.left)*(CW/r.width), sy = (e.clientY-r.top)*(CH/r.height);
+        const wx = (sx - cam.x) / cam.scale, wy = (sy - cam.y) / cam.scale;
+        const factor = e.deltaY < 0 ? 1.12 : 0.9;
+        cam.scale = Math.max(0.5, Math.min(3.0, cam.scale * factor));
+        cam.x = sx - wx * cam.scale;
+        cam.y = sy - wy * cam.scale;
+        _clampCam();
+    }, { passive: false });
 
     // ── Info panel ────────────────────────────────────────────────
     function setInfo(html) {
@@ -3573,6 +3831,9 @@ function initFloatingChat() {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+    // Gate on auth (redirects to login.html if remote + unauthenticated)
+    checkAuth();
+
     document.querySelectorAll(".nav-item").forEach(el => {
         el.addEventListener("click", () => navigate(el.dataset.panel));
     });
