@@ -24,6 +24,14 @@ let activePanel = "tasks";
 let refreshTimer = null;
 let lastUpdate   = null;
 
+// Per-panel cache: stores last successful { data, html, ts } so content
+// is never lost on a failed refresh.
+const panelCache = {};
+// Per-panel loading flag: prevents concurrent fetches for the same panel.
+const panelLoading = {};
+// Debounce handle for WebSocket-triggered reloads.
+let wsReloadDebounce = null;
+
 // ──────────────────────────────────────────────────────────────────────────────
 // WebSocket / Real-time notifications
 // ──────────────────────────────────────────────────────────────────────────────
@@ -98,7 +106,11 @@ function initWebSocket() {
         _showToast(notif);
         _bumpBadge();
         const reload = { task: "tasks", agent: "agents", cron: "calendar", council: "council" };
-        if (reload[notif.type] && activePanel === reload[notif.type]) loadPanel(activePanel);
+        if (reload[notif.type] && activePanel === reload[notif.type]) {
+            // Debounce: if many notifications arrive in quick succession, only reload once.
+            if (wsReloadDebounce) clearTimeout(wsReloadDebounce);
+            wsReloadDebounce = setTimeout(() => loadPanel(activePanel), 1000);
+        }
     });
 }
 
@@ -4119,28 +4131,73 @@ async function loadPanel(panelId) {
     const el = $(`panel-${panelId}`);
     if (!el) return;
 
+    // Static panels (no remote endpoint)
     if (panel.endpoint === null) {
         el.innerHTML = panel.fn();
         if (panel.init) panel.init(null, el);
         return;
     }
 
-    el.innerHTML = loading();
+    // Prevent concurrent fetches for the same panel
+    if (panelLoading[panelId]) {
+        console.log(`[loadPanel] skipping — already loading "${panelId}"`);
+        return;
+    }
+    panelLoading[panelId] = true;
+
+    const hasCache = !!panelCache[panelId];
+
+    if (!hasCache) {
+        // First load: show spinner (no content yet)
+        el.innerHTML = loading();
+    } else {
+        // Subsequent refresh: keep existing content, show a subtle "refreshing" badge
+        _showStaleIndicator(el, "↻ refreshing…", "var(--yellow,#f5a623)");
+    }
+
     try {
         const data = await fetchData(panel.endpoint);
+        let html;
         try {
-            el.innerHTML = panel.fn(data);
+            html = panel.fn(data);
         } catch (renderErr) {
             console.error(`[loadPanel] render error for panel "${panelId}":`, renderErr, "data:", data);
             throw new Error(`Render error: ${renderErr.message}`);
         }
+        // Success — update cache and render
+        panelCache[panelId] = { data, html, ts: Date.now() };
+        el.innerHTML = html;
         if (panel.init) panel.init(data, el);
         lastUpdate = new Date();
         updateStatusBar();
     } catch(e) {
         console.error(`[loadPanel] failed to load panel "${panelId}":`, e);
-        el.innerHTML = errorBox(`Failed to load ${panelId}: ${e.message}`);
+        if (hasCache) {
+            // Content already loaded once — restore it and show a non-intrusive warning
+            el.innerHTML = panelCache[panelId].html;
+            if (panel.init) panel.init(panelCache[panelId].data, el);
+            _showStaleIndicator(el, "⚠ Refresh failed — showing cached data", "var(--yellow,#f5a623)", 5000);
+        } else {
+            // Never loaded successfully — show error (no content to lose)
+            el.innerHTML = errorBox(`Failed to load ${panelId}: ${e.message}`);
+        }
+    } finally {
+        panelLoading[panelId] = false;
     }
+}
+
+/** Show a temporary overlay badge on a panel without replacing its content. */
+function _showStaleIndicator(el, text, color, autoRemoveMs = 0) {
+    el.style.position = "relative";
+    const prev = el.querySelector(".__stale-indicator");
+    if (prev) prev.remove();
+    const badge = document.createElement("div");
+    badge.className = "__stale-indicator";
+    badge.style.cssText = `position:absolute;top:8px;right:12px;font-size:11px;color:${color};` +
+        `background:rgba(0,0,0,0.65);padding:2px 8px;border-radius:4px;z-index:100;pointer-events:none;`;
+    badge.textContent = text;
+    el.appendChild(badge);
+    if (autoRemoveMs > 0) setTimeout(() => badge.remove(), autoRemoveMs);
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
