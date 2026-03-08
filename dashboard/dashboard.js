@@ -3090,132 +3090,100 @@ function initOfficePanel(data, container) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Team (unchanged)
+// Company (Mission, Vision, Strategy, Goals)
 // ──────────────────────────────────────────────────────────────────────────────
 function renderTeam(d) {
-    const renderNode = (node, indent=0) => {
-        if (!node) return "";
-        const reports = (node.reports||[]).map(r => renderNode(r, indent+1)).join("");
-        return `
-            <div style="margin-left:${indent*24}px;margin-bottom:8px">
-                <div style="display:flex;align-items:center;gap:8px;padding:9px 13px;background:var(--bg2);border:1px solid var(--border);border-radius:8px;margin-bottom:4px">
-                    <span style="font-weight:700;color:#fff;font-size:0.88rem">${node.name||""}</span>
-                    <span style="font-size:0.75rem;color:var(--text2)">${node.title||""}</span>
-                </div>${reports}
-            </div>`;
-    };
     return `
         <div class="panel-header">
-            <div class="panel-title">🏗️ Company Goals</div>
-            <div class="panel-subtitle">Headcount: ${d.headcount} · Org structure</div>
+            <div class="panel-title">🏢 Company</div>
+            <div class="panel-subtitle">Mission · Vision · Strategy · Goals</div>
         </div>
+
         <div class="card" style="margin-bottom:16px">
             <div class="card-title">Mission</div>
             <div style="font-size:0.92rem;color:var(--text);line-height:1.7;font-style:italic">"${escHtml(d.mission)}"</div>
         </div>
-        <div class="grid-2">
-            <div class="card"><div class="card-title">Org Chart</div>
-                ${renderNode({ name: d.org_chart.ceo.name, title: d.org_chart.ceo.title, reports: d.org_chart.reports })}
-            </div>
-            <div class="card"><div class="card-title">2026 Goals</div>
-                <ul class="checklist">
-                    ${d.goals.map(g=>`<li class="check-item"><span class="check-icon">🎯</span><span style="font-size:0.85rem">${escHtml(g)}</span></li>`).join("")}
-                </ul>
-            </div>
-        </div>`;
-}
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Vision
-// ──────────────────────────────────────────────────────────────────────────────
-function renderVision() {
-    return `
-        <div class="panel-header">
-            <div class="panel-title">🔭 Vision</div>
-            <div class="panel-subtitle">Where we're going · Long-term north star</div>
-        </div>
         <div class="card" style="margin-bottom:16px">
-            <div class="card-title">Our Vision</div>
+            <div class="card-title">Vision</div>
             <div style="font-size:1rem;color:var(--text);line-height:1.8;font-style:italic;padding:8px 0">
                 "To be the intelligence layer for every ambitious team — making world-class thinking accessible to builders everywhere."
             </div>
+            <div class="grid-2" style="margin-top:12px">
+                <div>
+                    <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">3-Year Picture</div>
+                    <ul class="checklist">
+                        <li class="check-item"><span class="check-icon">🌍</span><span style="font-size:0.85rem">Nouga is the default AI operating system for early-stage companies</span></li>
+                        <li class="check-item"><span class="check-icon">🤖</span><span style="font-size:0.85rem">AI agents handle 80% of routine operations autonomously</span></li>
+                        <li class="check-item"><span class="check-icon">📈</span><span style="font-size:0.85rem">Profitable, capital-efficient, and globally distributed</span></li>
+                    </ul>
+                </div>
+                <div>
+                    <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Core Beliefs</div>
+                    <ul class="checklist">
+                        <li class="check-item"><span class="check-icon">💡</span><span style="font-size:0.85rem">Small teams with great leverage beat large teams every time</span></li>
+                        <li class="check-item"><span class="check-icon">🔗</span><span style="font-size:0.85rem">AI and humans are partners, not replacements</span></li>
+                        <li class="check-item"><span class="check-icon">⚡</span><span style="font-size:0.85rem">Speed of learning is the ultimate competitive advantage</span></li>
+                    </ul>
+                </div>
+            </div>
         </div>
-        <div class="grid-2">
-            <div class="card">
-                <div class="card-title">3-Year Picture</div>
+
+        <div class="card" style="margin-bottom:16px">
+            <div class="card-title">Strategy</div>
+            <div style="margin-bottom:14px">
+                <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🗺️ Where Do We Play</div>
+                <div class="grid-2" style="gap:10px">
+                    <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
+                        <div style="font-size:0.8rem;font-weight:700;color:var(--blue2);margin-bottom:6px">PRIMARY MARKET</div>
+                        <div style="font-size:0.85rem;color:var(--text);line-height:1.5">Early-stage startups (seed–Series A) running lean with 2–15 people who need operational leverage without headcount.</div>
+                    </div>
+                    <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
+                        <div style="font-size:0.8rem;font-weight:700;color:var(--blue2);margin-bottom:6px">GEOGRAPHY</div>
+                        <div style="font-size:0.85rem;color:var(--text);line-height:1.5">English-speaking markets first (US, UK, Canada, ANZ), expanding to Europe in 2026.</div>
+                    </div>
+                </div>
+            </div>
+            <div style="margin-bottom:14px">
+                <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🎁 What Do We Offer</div>
                 <ul class="checklist">
-                    <li class="check-item"><span class="check-icon">🌍</span><span style="font-size:0.85rem">Nouga is the default AI operating system for early-stage companies</span></li>
-                    <li class="check-item"><span class="check-icon">🤖</span><span style="font-size:0.85rem">AI agents handle 80% of routine operations autonomously</span></li>
-                    <li class="check-item"><span class="check-icon">📈</span><span style="font-size:0.85rem">Profitable, capital-efficient, and globally distributed</span></li>
+                    <li class="check-item"><span class="check-icon">🤖</span><span style="font-size:0.85rem"><strong>AI Agent Suite</strong> — purpose-built agents for trading, security, content, and ops that run autonomously</span></li>
+                    <li class="check-item"><span class="check-icon">🧠</span><span style="font-size:0.85rem"><strong>Mission Control Dashboard</strong> — unified ops layer giving founders a single pane of glass</span></li>
+                    <li class="check-item"><span class="check-icon">⚙️</span><span style="font-size:0.85rem"><strong>Integration Platform</strong> — connects your tools (Slack, Gmail, GitHub, Binance) into one intelligent workflow</span></li>
+                    <li class="check-item"><span class="check-icon">📊</span><span style="font-size:0.85rem"><strong>LLM Council</strong> — multi-model reasoning for strategic decisions, not just task execution</span></li>
                 </ul>
             </div>
-            <div class="card">
-                <div class="card-title">Core Beliefs</div>
-                <ul class="checklist">
-                    <li class="check-item"><span class="check-icon">💡</span><span style="font-size:0.85rem">Small teams with great leverage beat large teams every time</span></li>
-                    <li class="check-item"><span class="check-icon">🔗</span><span style="font-size:0.85rem">AI and humans are partners, not replacements</span></li>
-                    <li class="check-item"><span class="check-icon">⚡</span><span style="font-size:0.85rem">Speed of learning is the ultimate competitive advantage</span></li>
-                </ul>
+            <div>
+                <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🚀 Go-to-Market</div>
+                <div class="grid-2" style="gap:10px">
+                    <div>
+                        <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Acquisition</div>
+                        <ul class="checklist">
+                            <li class="check-item"><span class="check-icon">✍️</span><span style="font-size:0.82rem">Founder-led content (build-in-public, X/LinkedIn)</span></li>
+                            <li class="check-item"><span class="check-icon">🤝</span><span style="font-size:0.82rem">Community partnerships with startup accelerators</span></li>
+                            <li class="check-item"><span class="check-icon">🔍</span><span style="font-size:0.82rem">SEO / organic via AI ops use-case content</span></li>
+                        </ul>
+                    </div>
+                    <div>
+                        <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Conversion & Retention</div>
+                        <ul class="checklist">
+                            <li class="check-item"><span class="check-icon">🎯</span><span style="font-size:0.82rem">Free trial → usage-based pricing</span></li>
+                            <li class="check-item"><span class="check-icon">📞</span><span style="font-size:0.82rem">High-touch onboarding for first 50 customers</span></li>
+                            <li class="check-item"><span class="check-icon">🔄</span><span style="font-size:0.82rem">Sticky via integrations and institutional memory</span></li>
+                        </ul>
+                    </div>
+                </div>
             </div>
+        </div>
+
+        <div class="card">
+            <div class="card-title">Company Goals</div>
+            <ul class="checklist">
+                ${d.goals.map(g=>`<li class="check-item"><span class="check-icon">🎯</span><span style="font-size:0.85rem">${escHtml(g)}</span></li>`).join("")}
+            </ul>
         </div>`;
 }
 
-// ──────────────────────────────────────────────────────────────────────────────
-// Strategy
-// ──────────────────────────────────────────────────────────────────────────────
-function renderStrategy() {
-    return `
-        <div class="panel-header">
-            <div class="panel-title">♟️ Strategy</div>
-            <div class="panel-subtitle">How we win · Choices that define us</div>
-        </div>
-        <div class="card" style="margin-bottom:16px">
-            <div class="card-title">🗺️ Where Do We Play</div>
-            <div style="font-size:0.88rem;color:var(--text2);margin-bottom:12px;line-height:1.6">The markets, customers, and segments we've chosen to focus on.</div>
-            <div class="grid-2" style="gap:10px">
-                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
-                    <div style="font-size:0.8rem;font-weight:700;color:var(--blue2);margin-bottom:6px">PRIMARY MARKET</div>
-                    <div style="font-size:0.85rem;color:var(--text);line-height:1.5">Early-stage startups (seed–Series A) running lean with 2–15 people who need operational leverage without headcount.</div>
-                </div>
-                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
-                    <div style="font-size:0.8rem;font-weight:700;color:var(--blue2);margin-bottom:6px">GEOGRAPHY</div>
-                    <div style="font-size:0.85rem;color:var(--text);line-height:1.5">English-speaking markets first (US, UK, Canada, ANZ), expanding to Europe in 2026.</div>
-                </div>
-            </div>
-        </div>
-        <div class="card" style="margin-bottom:16px">
-            <div class="card-title">🎁 What Do We Offer</div>
-            <div style="font-size:0.88rem;color:var(--text2);margin-bottom:12px;line-height:1.6">The products, services, and capabilities we bring to market.</div>
-            <ul class="checklist">
-                <li class="check-item"><span class="check-icon">🤖</span><span style="font-size:0.85rem"><strong>AI Agent Suite</strong> — purpose-built agents for trading, security, content, and ops that run autonomously</span></li>
-                <li class="check-item"><span class="check-icon">🧠</span><span style="font-size:0.85rem"><strong>Mission Control Dashboard</strong> — unified ops layer giving founders a single pane of glass</span></li>
-                <li class="check-item"><span class="check-icon">⚙️</span><span style="font-size:0.85rem"><strong>Integration Platform</strong> — connects your tools (Slack, Gmail, GitHub, Binance) into one intelligent workflow</span></li>
-                <li class="check-item"><span class="check-icon">📊</span><span style="font-size:0.85rem"><strong>LLM Council</strong> — multi-model reasoning for strategic decisions, not just task execution</span></li>
-            </ul>
-        </div>
-        <div class="card">
-            <div class="card-title">🚀 Go-to-Market</div>
-            <div style="font-size:0.88rem;color:var(--text2);margin-bottom:12px;line-height:1.6">How we acquire, convert, and retain customers.</div>
-            <div class="grid-2" style="gap:10px">
-                <div>
-                    <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Acquisition</div>
-                    <ul class="checklist">
-                        <li class="check-item"><span class="check-icon">✍️</span><span style="font-size:0.82rem">Founder-led content (build-in-public, X/LinkedIn)</span></li>
-                        <li class="check-item"><span class="check-icon">🤝</span><span style="font-size:0.82rem">Community partnerships with startup accelerators</span></li>
-                        <li class="check-item"><span class="check-icon">🔍</span><span style="font-size:0.82rem">SEO / organic via AI ops use-case content</span></li>
-                    </ul>
-                </div>
-                <div>
-                    <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Conversion & Retention</div>
-                    <ul class="checklist">
-                        <li class="check-item"><span class="check-icon">🎯</span><span style="font-size:0.82rem">Free trial → usage-based pricing</span></li>
-                        <li class="check-item"><span class="check-icon">📞</span><span style="font-size:0.82rem">High-touch onboarding for first 50 customers</span></li>
-                        <li class="check-item"><span class="check-icon">🔄</span><span style="font-size:0.82rem">Sticky via integrations and institutional memory</span></li>
-                    </ul>
-                </div>
-            </div>
-        </div>`;
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // System — Network Diagram + Version Checker
@@ -3710,8 +3678,6 @@ const PANELS = {
     people:    { fn: renderPeople,    endpoint: "people"                           },
     office:    { fn: renderOffice,    endpoint: "office",   init: initOfficePanel  },
     team:      { fn: renderTeam,      endpoint: "team"                             },
-    vision:    { fn: renderVision,    endpoint: null                               },
-    strategy:  { fn: renderStrategy,  endpoint: null                               },
     system:    { fn: renderSystem,    endpoint: "system",   init: initSystemPanel  },
     radar:     { fn: renderRadar,     endpoint: "radar"                            },
     factory:   { fn: renderFactory,   endpoint: "factory",  init: initFactoryPanel },
