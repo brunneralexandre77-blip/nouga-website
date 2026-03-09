@@ -3940,8 +3940,6 @@ const SKILLS_DATA = {
         },
     ],
     pending: [
-        { name: "RTK (Token Optimization)", priority: "high",   source: "rtk-ai/rtk"           },
-        { name: "Code Review Agent",         priority: "high",   source: "Anthropic"             },
         { name: "System Architect",          priority: "high",   source: "Custom"                },
         { name: "Ralph (Autonomous Loop)",   priority: "medium", source: "frankbria/ralph"       },
         { name: "Vibe Kanban",               priority: "medium", source: "bloopai/vibe"          },
