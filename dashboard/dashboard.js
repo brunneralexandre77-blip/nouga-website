@@ -1548,18 +1548,22 @@ function renderCalendar(d) {
             <div class="cal-grid">${header}${rows}</div>
         </div>
         <div style="margin-top:16px"><div class="card">
-            <div class="card-title">📌 Upcoming</div>
+            <div class="card-title">📌 Upcoming · Tasks &amp; Jobs</div>
             ${(d.upcoming || []).map(e => `
-                <div class="service-row">
+                <div class="service-row cal-upcoming-row" data-task-id="${e.task_id||""}" data-type="${e.type||""}" style="cursor:${e.task_id ? "pointer" : "default"}">
                     <div class="service-left">
                         <span style="font-size:1.1rem">${e.emoji}</span>
                         <div>
                             <div class="service-name">${escHtml(e.event)}</div>
-                            <div class="service-port">${escHtml(e.time)}</div>
+                            <div class="service-port">${escHtml(e.time)}${e.assignee ? ` · ${escHtml(e.assignee)}` : ""}</div>
                         </div>
                     </div>
-                    <span class="tag">${e.type}</span>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        ${e.priority === "high" ? `<span style="color:#f87171;font-size:0.7rem;font-weight:700">HIGH</span>` : ""}
+                        <span class="tag">${e.type}</span>
+                    </div>
                 </div>`).join("")}
+            ${!(d.upcoming || []).length ? `<div style="color:var(--text3);font-size:0.85rem;padding:8px 0">No upcoming events. Tasks with due dates will appear here.</div>` : ""}
         </div></div>`;
 }
 
@@ -1570,6 +1574,33 @@ function initCalendarPanel(data, container) {
             const jobId = parseInt(block.dataset.jobId);
             const job   = (data.cron_jobs || []).find(j => j.id === jobId);
             if (job) showCronModal(job, jobId);
+        });
+    });
+
+    // Task row clicks in upcoming → show task detail popover
+    container.querySelectorAll(".cal-upcoming-row[data-task-id]").forEach(row => {
+        const taskId = row.dataset.taskId;
+        if (!taskId) return;
+        row.addEventListener("click", () => {
+            const event = (data.upcoming || []).find(e => String(e.task_id) === taskId);
+            if (!event) return;
+            const modal = createModal({
+                title: `${event.emoji} Task Details`,
+                body: `
+                    <div style="display:flex;flex-direction:column;gap:10px">
+                        <div><strong style="color:#fff">${escHtml(event.event)}</strong></div>
+                        <div style="display:flex;gap:12px;font-size:0.82rem;color:var(--text3)">
+                            <span>📅 Due: ${escHtml(event.time)}</span>
+                            ${event.assignee ? `<span>👤 ${escHtml(event.assignee)}</span>` : ""}
+                            ${event.priority ? `<span>⚡ ${escHtml(event.priority)}</span>` : ""}
+                        </div>
+                        <div style="font-size:0.82rem;color:var(--text2)">Status: <span style="color:#60a5fa">${escHtml(event.status||"todo")}</span></div>
+                    </div>`,
+                footer: `<button class="btn btn-ghost" id="cal-modal-close">Close</button>
+                         <button class="btn btn-primary" id="cal-modal-goto">Go to Tasks</button>`,
+            });
+            modal.querySelector("#cal-modal-close").onclick = () => modal.remove();
+            modal.querySelector("#cal-modal-goto").onclick = () => { modal.remove(); navigate("tasks"); };
         });
     });
 
@@ -1691,7 +1722,7 @@ function _renderProjectCard(p, depth) {
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
                         ${badge(p.label, statusColor(p.status))}
-                        ${p.id ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>` : ""}
+                        ${p.db_id ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>` : ""}
                         <span style="font-size:0.75rem;color:var(--text3)">›</span>
                     </div>
                 </div>
@@ -2504,13 +2535,15 @@ function renderDocs(d) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// People (unchanged)
+// ──────────────────────────────────────────────────────────────────────────────
+// People — Team directory + Hawk's Office widget (Task 2 & 7)
 // ──────────────────────────────────────────────────────────────────────────────
 function renderPeople(d) {
+    const hawk = (d.people || []).find(p => p.id === "hawk");
     return `
         <div class="panel-header">
             <div class="panel-title">👥 People</div>
-            <div class="panel-subtitle">Team directory</div>
+            <div class="panel-subtitle">Team directory · humans &amp; agents</div>
         </div>
         <div class="grid-2">
             ${d.people.map(p => `
@@ -2524,9 +2557,38 @@ function renderPeople(d) {
                             ${badge(p.status,"green")}
                             <span style="font-size:0.72rem;color:var(--text3)">${p.contact}</span>
                         </div>
+                        ${p.id === "hawk" ? `<button class="btn btn-ghost" onclick="navigate('agents')" style="font-size:0.7rem;padding:2px 8px;margin-top:8px">🦅 Visit Office</button>` : ""}
                     </div>
                 </div>`).join("")}
-        </div>`;
+        </div>
+        ${hawk ? `
+        <div class="card" style="margin-top:16px">
+            <div class="card-title">🦅 Hawk's Office — Code Review Department</div>
+            <div class="grid-2" style="margin-top:10px;gap:10px">
+                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
+                    <div style="font-size:0.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Office Location</div>
+                    <div style="font-size:0.82rem;color:var(--text)">~/.openclaw/agents/hawk/</div>
+                    <div style="font-size:0.75rem;color:var(--text3);margin-top:4px">workspace · logs · reviews · desk</div>
+                </div>
+                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
+                    <div style="font-size:0.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Status</div>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <span style="width:8px;height:8px;background:#22c55e;border-radius:50%;display:inline-block"></span>
+                        <span style="font-size:0.82rem;color:#22c55e;font-weight:600">Active — On Duty</span>
+                    </div>
+                    <div style="font-size:0.75rem;color:var(--text3);margin-top:4px">Memory access: granted ✓</div>
+                </div>
+                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
+                    <div style="font-size:0.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Capabilities</div>
+                    <div style="font-size:0.78rem;color:var(--text);line-height:1.7">Code Analysis · Security Audit<br>Performance Review · Quality Gate</div>
+                </div>
+                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
+                    <div style="font-size:0.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Quick Actions</div>
+                    <button class="btn btn-ghost" onclick="navigate('agents')" style="font-size:0.75rem;padding:4px 10px;width:100%;margin-bottom:6px">View Agent Profile</button>
+                    <button class="btn btn-ghost" onclick="navigate('workflows')" style="font-size:0.75rem;padding:4px 10px;width:100%">Assign Task</button>
+                </div>
+            </div>
+        </div>` : ""}`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -3848,8 +3910,11 @@ function renderTeam(d) {
         </div>
 
         <div class="card" style="margin-bottom:16px">
-            <div class="card-title">Mission</div>
-            <div style="font-size:0.92rem;color:var(--text);line-height:1.7;font-style:italic">"${escHtml(d.mission)}"</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div class="card-title" style="margin-bottom:0">Mission</div>
+                <button class="btn btn-ghost company-edit-btn" data-section="mission" style="font-size:0.72rem;padding:2px 8px">✏️ Edit</button>
+            </div>
+            <div id="company-mission-view" style="font-size:0.92rem;color:var(--text);line-height:1.7;font-style:italic">"${escHtml(d.mission)}"</div>
         </div>
 
         <div class="card" style="margin-bottom:16px">
@@ -3925,13 +3990,63 @@ function renderTeam(d) {
         </div>
 
         <div class="card">
-            <div class="card-title">Company Goals</div>
-            <ul class="checklist">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div class="card-title" style="margin-bottom:0">Company Goals</div>
+                <button class="btn btn-ghost company-edit-btn" data-section="goals" style="font-size:0.72rem;padding:2px 8px">✏️ Edit</button>
+            </div>
+            <ul class="checklist" id="company-goals-view">
                 ${d.goals.map(g=>`<li class="check-item"><span class="check-icon">🎯</span><span style="font-size:0.85rem">${escHtml(g)}</span></li>`).join("")}
             </ul>
         </div>`;
 }
 
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Task 6: Company section editing
+// ──────────────────────────────────────────────────────────────────────────────
+function initTeamPanel(data, el) {
+    el.querySelectorAll(".company-edit-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const section = btn.dataset.section;
+            const isGoals = section === "goals";
+            const currentVal = isGoals
+                ? (data.goals || []).join("\n")
+                : data.mission || "";
+
+            const modal = createModal({
+                title: `Edit ${section.charAt(0).toUpperCase() + section.slice(1)}`,
+                body: `
+                    <div style="display:flex;flex-direction:column;gap:10px">
+                        <div style="font-size:0.8rem;color:var(--text3)">${isGoals ? "One goal per line" : "Edit mission statement"}</div>
+                        <textarea id="company-edit-ta" class="form-input" rows="6" style="width:100%;resize:vertical;font-size:0.88rem;line-height:1.6">${escHtml(currentVal)}</textarea>
+                    </div>`,
+                footer: `<button class="btn btn-ghost" id="co-cancel">Cancel</button>
+                         <button class="btn btn-primary" id="co-save">Save</button>`,
+            });
+
+            modal.querySelector("#co-cancel").onclick = () => modal.remove();
+            modal.querySelector("#co-save").onclick = async () => {
+                const saveBtn = modal.querySelector("#co-save");
+                saveBtn.disabled = true;
+                saveBtn.textContent = "Saving…";
+                const raw = modal.querySelector("#company-edit-ta").value;
+                const content = isGoals
+                    ? raw.split("\n").map(s => s.trim()).filter(Boolean)
+                    : raw.trim();
+                try {
+                    await apiPut(`company/${section}`, { content });
+                    modal.remove();
+                    showNotif(`${section} updated`, "green");
+                    loadPanel("team");
+                } catch(e) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = "Save";
+                    showNotif("Save failed: " + e.message, "red");
+                }
+            };
+        });
+    });
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // System — Network Diagram + Version Checker
@@ -5375,7 +5490,7 @@ const PANELS = {
     docs:      { fn: renderDocs,      endpoint: "docs"                             },
     people:    { fn: renderPeople,    endpoint: "people"                           },
     office:    { fn: renderOffice,    endpoint: "office",   init: initOfficePanel  },
-    team:      { fn: renderTeam,      endpoint: "team"                             },
+    team:      { fn: renderTeam,      endpoint: "team",     init: initTeamPanel    },
     system:    { fn: renderSystem,    endpoint: "system",   init: initSystemPanel  },
     skills:    { fn: renderSkills,    endpoint: null                               },
     radar:     { fn: renderRadar,     endpoint: "radar"                            },
@@ -5852,5 +5967,51 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(updateStatusBar,  5000);
     setInterval(checkHealth,     60000);
     updateClock();
+
+    // Task 5: Draggable sidebar sections
+    initDraggableSidebar();
 });
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Task 5: Draggable sidebar sections
+// ──────────────────────────────────────────────────────────────────────────────
+function initDraggableSidebar() {
+    const sidebar = document.querySelector(".sidebar");
+    if (!sidebar || typeof Sortable === "undefined") return;
+
+    // Add drag handles to each sidebar-section header label
+    sidebar.querySelectorAll(".sidebar-label").forEach(label => {
+        label.style.cursor = "grab";
+        label.setAttribute("title", "Drag to reorder section");
+        label.innerHTML = `<span class="sidebar-drag-handle" style="opacity:0.4;font-size:0.7rem;margin-right:4px;user-select:none">⋮⋮</span>${label.innerHTML}`;
+    });
+
+    Sortable.create(sidebar, {
+        animation: 150,
+        handle: ".sidebar-label",
+        ghostClass: "sortable-ghost",
+        chosenClass: "sortable-chosen",
+        draggable: ".sidebar-section",
+        onEnd() {
+            const order = [...sidebar.querySelectorAll(".sidebar-section")].map(sec => {
+                return sec.querySelector(".sidebar-label")?.textContent?.trim().replace(/^⋮⋮\s*/, "") || "";
+            });
+            localStorage.setItem("sidebar_section_order", JSON.stringify(order));
+        }
+    });
+
+    // Restore saved order
+    try {
+        const saved = JSON.parse(localStorage.getItem("sidebar_section_order") || "null");
+        if (!saved || !Array.isArray(saved)) return;
+        const sections = [...sidebar.querySelectorAll(".sidebar-section")];
+        saved.forEach(labelText => {
+            const sec = sections.find(s => {
+                const t = s.querySelector(".sidebar-label")?.textContent?.trim().replace(/^⋮⋮\s*/, "") || "";
+                return t === labelText;
+            });
+            if (sec) sidebar.appendChild(sec);
+        });
+    } catch(_) {}
+}
 // Delete button fix deployed Mon Mar  9 21:25:04 CET 2026
