@@ -4586,6 +4586,284 @@ function renderGantt(d) {
 
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Antfarm Workflows Panel
+// ──────────────────────────────────────────────────────────────────────────────
+const ANTFARM_API = "http://localhost:5001/api/antfarm";
+
+const WF_META = {
+    "bug-fix":        { emoji: "🐛", label: "Bug Fix",        color: "#f87171" },
+    "feature-dev":    { emoji: "✨", label: "Feature Dev",    color: "#60a5fa" },
+    "security-audit": { emoji: "🔒", label: "Security Audit", color: "#fb923c" },
+};
+
+function _wfStatusBadge(status) {
+    const map = {
+        running: { color: "#22c55e", bg: "#16a34a22", label: "running" },
+        pending: { color: "#f5a623", bg: "#f5a62322", label: "pending" },
+        done:    { color: "#60a5fa", bg: "#60a5fa22", label: "done"    },
+        failed:  { color: "#f87171", bg: "#f8717122", label: "failed"  },
+        waiting: { color: "#888",    bg: "#88888822", label: "waiting" },
+    };
+    const s = map[status] || map.waiting;
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:999px;font-size:0.72rem;font-weight:600;color:${s.color};background:${s.bg};border:1px solid ${s.color}44">${s.label}</span>`;
+}
+
+function _wfProgress(steps) {
+    if (!steps || !steps.length) return { done: 0, total: 0, bar: "" };
+    const total = steps.length;
+    const done  = steps.filter(s => s.status === "done").length;
+    const pct   = Math.round((done / total) * 100);
+    const bar   = `<div style="display:flex;align-items:center;gap:6px">
+        <div style="flex:1;height:6px;background:#ffffff15;border-radius:3px;overflow:hidden">
+            <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,#60a5fa,#818cf8);transition:width 0.3s"></div>
+        </div>
+        <span style="font-size:0.72rem;color:var(--text3,#888);white-space:nowrap">${done}/${total}</span>
+    </div>`;
+    return { done, total, pct, bar };
+}
+
+function _wfAgents(steps) {
+    if (!steps || !steps.length) return "—";
+    const agents = [...new Set(steps.map(s => s.agent_id || "").filter(Boolean).map(a => a.replace(/-[a-z]+$/, "").replace(/^[a-z]/, c => c.toUpperCase())))];
+    return agents.slice(0, 3).join(", ") || "—";
+}
+
+function _wfCurrentStep(steps) {
+    if (!steps || !steps.length) return "—";
+    const running = steps.find(s => s.status === "running");
+    const waiting = steps.find(s => s.status === "waiting");
+    const failed  = steps.find(s => s.status === "failed");
+    const active  = running || waiting || failed;
+    if (!active) return "Complete";
+    return active.step_id || "—";
+}
+
+function renderWorkflows() {
+    return `
+        <div class="panel-header">
+            <div class="panel-title">🐜 Workflows</div>
+            <div class="panel-subtitle">Antfarm · AI-powered dev automation</div>
+        </div>
+        <div id="wf-body" style="padding:16px;display:flex;flex-direction:column;gap:20px">
+            <div class="loading"><div class="spinner"></div> Loading antfarm…</div>
+        </div>`;
+}
+
+function _wfRunModal(workflows) {
+    return new Promise(resolve => {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+        const wfOpts = workflows.map(w => {
+            const m = WF_META[w.id] || { emoji: "⚙️", label: w.name || w.id };
+            return `<option value="${escHtml(w.id)}">${m.emoji} ${escHtml(m.label || w.name)}</option>`;
+        }).join("");
+        overlay.innerHTML = `
+            <div class="modal" style="max-width:480px">
+                <div class="modal-header">
+                    <div class="modal-title">🐜 Start New Workflow</div>
+                    <button class="modal-close">✕</button>
+                </div>
+                <div class="modal-body" style="display:flex;flex-direction:column;gap:14px;padding:20px">
+                    <div>
+                        <label style="font-size:0.8rem;color:var(--text3,#888);display:block;margin-bottom:6px">Workflow type</label>
+                        <select id="wf-sel" class="form-input">${wfOpts}</select>
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem;color:var(--text3,#888);display:block;margin-bottom:6px">Task / Description</label>
+                        <textarea id="wf-task" class="form-input" rows="4" placeholder="Describe what you want done…" style="resize:vertical;font-family:inherit"></textarea>
+                    </div>
+                    <div style="display:flex;gap:8px;justify-content:flex-end">
+                        <button class="btn btn-ghost" id="wf-cancel">Cancel</button>
+                        <button class="btn btn-primary" id="wf-submit">🚀 Start Workflow</button>
+                    </div>
+                </div>
+            </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector(".modal-close").onclick = () => { overlay.remove(); resolve(null); };
+        overlay.querySelector("#wf-cancel").onclick   = () => { overlay.remove(); resolve(null); };
+        overlay.addEventListener("click", e => { if (e.target === overlay) { overlay.remove(); resolve(null); } });
+        overlay.querySelector("#wf-submit").onclick = async () => {
+            const workflow = overlay.querySelector("#wf-sel").value;
+            const task     = overlay.querySelector("#wf-task").value.trim();
+            if (!task) { overlay.querySelector("#wf-task").focus(); return; }
+            overlay.querySelector("#wf-submit").disabled = true;
+            overlay.querySelector("#wf-submit").textContent = "Starting…";
+            resolve({ workflow, task });
+            overlay.remove();
+        };
+        // Pre-select if called with a workflow
+        if (workflows._preselect) {
+            overlay.querySelector("#wf-sel").value = workflows._preselect;
+        }
+    });
+}
+
+async function initWorkflowsPanel(_, el) {
+    const body = el.querySelector("#wf-body");
+
+    async function reload() {
+        body.innerHTML = `<div class="loading"><div class="spinner"></div> Loading antfarm…</div>`;
+        let runs = [], wfDefs = [];
+        try {
+            const [runsRes, wfRes] = await Promise.all([
+                fetch(`${ANTFARM_API}/runs`),
+                fetch(`${ANTFARM_API}/workflows`),
+            ]);
+            const runsJson = await runsRes.json();
+            const wfJson   = await wfRes.json();
+            if (runsJson.success) runs   = runsJson.data;
+            if (wfJson.success)   wfDefs = wfJson.data;
+        } catch(e) {
+            body.innerHTML = `<div style="color:var(--red,#f87171);padding:16px">
+                Failed to connect to antfarm — is it running? (<code>antfarm dashboard start</code>)<br>
+                <small style="color:var(--text3)">${escHtml(e.message)}</small>
+            </div>`;
+            return;
+        }
+
+        // Stats row
+        const statCounts = { running: 0, pending: 0, done: 0, failed: 0 };
+        runs.forEach(r => { if (r.status in statCounts) statCounts[r.status]++; });
+
+        const statsHtml = Object.entries(statCounts).map(([k, v]) => {
+            const m = { running: ["#22c55e", "Running"], pending: ["#f5a623", "Pending"], done: ["#60a5fa", "Done"], failed: ["#f87171", "Failed"] }[k];
+            return `<div style="text-align:center;padding:12px 20px;background:var(--bg2,#1a1a2e);border:1px solid ${m[0]}33;border-radius:8px;min-width:90px">
+                <div style="font-size:1.6rem;font-weight:700;color:${m[0]}">${v}</div>
+                <div style="font-size:0.72rem;color:var(--text3,#888);text-transform:uppercase;letter-spacing:0.05em">${m[1]}</div>
+            </div>`;
+        }).join("");
+
+        // Quick-start buttons
+        const qsHtml = `
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-ghost wf-quick" data-wf="feature-dev" style="border-color:#60a5fa44;color:#60a5fa">✨ New Feature</button>
+                <button class="btn btn-ghost wf-quick" data-wf="bug-fix" style="border-color:#f8717144;color:#f87171">🐛 Fix Bug</button>
+                <button class="btn btn-ghost wf-quick" data-wf="security-audit" style="border-color:#fb923c44;color:#fb923c">🔒 Security Audit</button>
+                <button class="btn btn-primary" id="wf-new-btn" style="margin-left:auto">+ New Workflow</button>
+            </div>`;
+
+        // Runs table
+        const runsHtml = runs.length === 0
+            ? `<div style="text-align:center;padding:40px;color:var(--text3,#888)">No workflow runs yet.<br><small>Use a quick-start button above to kick one off.</small></div>`
+            : `<table class="table" style="width:100%">
+                <thead><tr>
+                    <th>Workflow</th><th>Task</th><th>Status</th><th>Progress</th><th>Current Step</th><th>Agents</th><th>Started</th><th>Actions</th>
+                </tr></thead>
+                <tbody>${runs.map(r => {
+                    const meta  = WF_META[r.workflow_id] || { emoji: "⚙️", label: r.workflow_id, color: "#888" };
+                    const prog  = _wfProgress(r.steps);
+                    const task  = (r.task || "").replace(/\/.+\s+/, "…").substring(0, 60);
+                    const since = r.created_at ? new Date(r.created_at).toLocaleDateString() : "—";
+                    const step  = _wfCurrentStep(r.steps);
+                    const agts  = _wfAgents(r.steps);
+                    return `<tr>
+                        <td><span style="color:${meta.color};font-weight:600">${meta.emoji} ${meta.label}</span></td>
+                        <td style="max-width:200px;font-size:0.8rem;color:var(--text2,#aaa);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.task || "")}">${escHtml(task)}</td>
+                        <td>${_wfStatusBadge(r.status)}</td>
+                        <td style="min-width:120px">${prog.bar}</td>
+                        <td style="font-size:0.78rem;color:var(--text3,#888)">${escHtml(step)}</td>
+                        <td style="font-size:0.78rem;color:var(--text3,#888)">${escHtml(agts)}</td>
+                        <td style="font-size:0.78rem;color:var(--text3,#888)">${since}</td>
+                        <td><button class="btn btn-ghost wf-view-btn" data-run-id="${escHtml(r.id)}" style="font-size:0.75rem;padding:3px 8px">View</button></td>
+                    </tr>`;
+                }).join("")}</tbody>
+            </table>`;
+
+        body.innerHTML = `
+            <div style="display:flex;gap:12px;flex-wrap:wrap">${statsHtml}</div>
+            ${qsHtml}
+            <div>
+                <div style="font-size:0.8rem;color:var(--text3,#888);margin-bottom:8px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase">Recent Runs</div>
+                <div style="overflow-x:auto">${runsHtml}</div>
+            </div>`;
+
+        // Wire buttons
+        async function startWorkflow(preselect) {
+            const defs = [...wfDefs];
+            if (preselect) defs._preselect = preselect;
+            const result = await _wfRunModal(defs);
+            if (!result) return;
+            try {
+                const r = await fetch(`${ANTFARM_API}/start`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(result),
+                });
+                const j = await r.json();
+                if (!j.success) throw new Error(j.error || "Failed to start");
+                showNotif("Workflow started!", "green");
+                setTimeout(reload, 1500);
+            } catch(e) {
+                showNotif("Failed to start workflow: " + e.message, "red");
+            }
+        }
+
+        el.querySelectorAll(".wf-quick").forEach(btn => {
+            btn.onclick = () => startWorkflow(btn.dataset.wf);
+        });
+        el.querySelector("#wf-new-btn")?.addEventListener("click", () => startWorkflow(null));
+
+        // View button → expand steps inline
+        el.querySelectorAll(".wf-view-btn").forEach(btn => {
+            btn.onclick = () => {
+                const runId = btn.dataset.runId;
+                const run   = runs.find(r => r.id === runId);
+                if (!run) return;
+                _showRunDetail(run);
+            };
+        });
+    }
+
+    await reload();
+}
+
+function _showRunDetail(run) {
+    const meta = WF_META[run.workflow_id] || { emoji: "⚙️", label: run.workflow_id, color: "#888" };
+    const steps = run.steps || [];
+    const stepsHtml = steps.map((s, i) => {
+        const statusColor = { done: "#22c55e", running: "#60a5fa", failed: "#f87171", waiting: "#555", pending: "#f5a623" }[s.status] || "#888";
+        const icon = { done: "✓", running: "⟳", failed: "✗", waiting: "·", pending: "○" }[s.status] || "·";
+        return `<div style="display:flex;gap:12px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #ffffff08">
+            <div style="width:24px;height:24px;border-radius:50%;background:${statusColor}22;border:2px solid ${statusColor};display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:${statusColor};flex-shrink:0;margin-top:2px">${icon}</div>
+            <div style="flex:1;min-width:0">
+                <div style="font-weight:600;font-size:0.85rem">${escHtml(s.step_id || `Step ${i+1}`)}</div>
+                <div style="font-size:0.75rem;color:var(--text3,#888)">${escHtml(s.agent_id || "")}</div>
+                ${s.output ? `<div style="margin-top:6px;padding:8px;background:#ffffff08;border-radius:6px;font-size:0.75rem;color:var(--text2,#aaa);white-space:pre-wrap;max-height:120px;overflow-y:auto;font-family:monospace">${escHtml(s.output.substring(0, 400))}${s.output.length > 400 ? "…" : ""}</div>` : ""}
+            </div>
+            <div style="font-size:0.72rem;color:${statusColor};white-space:nowrap">${s.status}</div>
+        </div>`;
+    }).join("");
+
+    const prog = _wfProgress(steps);
+    const overlay = document.createElement("div");
+    overlay.className = "modal-overlay";
+    overlay.innerHTML = `
+        <div class="modal" style="max-width:620px;max-height:80vh;display:flex;flex-direction:column">
+            <div class="modal-header">
+                <div class="modal-title">${meta.emoji} ${meta.label} · Run Detail</div>
+                <button class="modal-close">✕</button>
+            </div>
+            <div style="padding:16px 20px;border-bottom:1px solid var(--border1,#2a2a40)">
+                <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+                    ${_wfStatusBadge(run.status)}
+                    <span style="font-size:0.78rem;color:var(--text3,#888)">Run ${run.id.substring(0,8)}</span>
+                    <span style="font-size:0.78rem;color:var(--text3,#888)">${new Date(run.created_at).toLocaleString()}</span>
+                </div>
+                <div style="margin-top:8px;font-size:0.8rem;color:var(--text2,#aaa)">${escHtml(run.task || "")}</div>
+                <div style="margin-top:10px">${prog.bar}</div>
+            </div>
+            <div style="flex:1;overflow-y:auto;padding:12px 20px">${stepsHtml}</div>
+        </div>`;
+    document.body.appendChild(overlay);
+    overlay.querySelector(".modal-close").onclick = () => overlay.remove();
+    overlay.addEventListener("click", e => { if (e.target === overlay) overlay.remove(); });
+}
+
+function showNotif(msg, color = "green") {
+    _showToast({ type: color === "red" ? "system" : "system", payload: { message: msg }, timestamp: new Date().toISOString() });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Panel map
 // ──────────────────────────────────────────────────────────────────────────────
 const PANELS = {
@@ -4606,6 +4884,7 @@ const PANELS = {
     radar:     { fn: renderRadar,     endpoint: "radar"                            },
     factory:   { fn: renderFactory,   endpoint: "factory",  init: initFactoryPanel },
     pipeline:  { fn: renderPipeline,  endpoint: "pipeline"                         },
+    workflows: { fn: renderWorkflows, endpoint: null,        init: initWorkflowsPanel },
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
