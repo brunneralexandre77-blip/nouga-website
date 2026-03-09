@@ -2630,3 +2630,13 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
 }
 .ah-queue-wrap.open { display: block; }
 .ah-queue-row:hover { background: rgba(255,255,255,0.03); }
+
+.sidebar-dragging {
+    opacity: 0.4;
+}
+
+.sidebar-drag-over {
+    background: var(--bg3, #2a2a3e);
+    border-radius: 6px;
+    outline: 1px dashed var(--border, #333);
+}

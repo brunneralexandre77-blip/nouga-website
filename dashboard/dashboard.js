@@ -1722,7 +1722,7 @@ function _renderProjectCard(p, depth) {
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
                         ${badge(p.label, statusColor(p.status))}
-                        ${p.db_id ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>` : ""}
+                        ${(p.db_id || p.slug) ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id || p.slug}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑 Delete</button>` : ""}
                         <span style="font-size:0.75rem;color:var(--text3)">›</span>
                     </div>
                 </div>
@@ -2639,6 +2639,7 @@ function initOfficePanel(data, container) {
             { x: 484, y: 75,  agent: "lara"    },
         ],
         lowerDesks: [
+            { x:  60, y: 232, agent: "hawk"    },
             { x: 215, y: 232, agent: "claude"  },
             { x: 358, y: 232, agent: "eva"     },
             { x: 492, y: 232, agent: "alex"    },
@@ -2652,10 +2653,10 @@ function initOfficePanel(data, container) {
 
     const SCREEN_COLORS = {
         milfred:"#00ff88", ernst:"#ff4444", gordon:"#ffaa00",
-        lara:"#ff44cc", claude:"#00ccff", eva:"#cc88ff", alex:"#4488ff",
+        lara:"#ff44cc", claude:"#00ccff", eva:"#cc88ff", alex:"#4488ff", hawk:"#ff8c00",
     };
 
-    const AGENT_EMOJI  = { alex:"👔", eva:"📅", milfred:"🤖", ernst:"🔒", gordon:"📈", lara:"📱", claude:"🧠" };
+    const AGENT_EMOJI  = { alex:"👔", eva:"📅", milfred:"🤖", ernst:"🔒", gordon:"📈", lara:"📱", claude:"🧠", hawk:"🦅" };
     const AGENT_PROPS  = {
         milfred: { accessory:"clipboard" },
         eva:     { accessory:"headset"   },
@@ -2664,6 +2665,7 @@ function initOfficePanel(data, container) {
         lara:    { accessory:"phone"     },
         claude:  { accessory:"headphones"},
         alex:    { accessory:"tie"       },
+        hawk:    { accessory:"glasses"   },
     };
     const AGENT_ACTS   = {
         milfred: ["Reviewing PR #42","Debugging canvas render","Planning Sprint 8","Merging feature branch"],
@@ -2673,6 +2675,7 @@ function initOfficePanel(data, container) {
         claude:  ["AI pipeline design","Architecture review","WebSocket refactor","Memory schema"],
         eva:     ["CEO briefing ready","14:00 confirmed","Routing 3 tasks","Calendar updated"],
         alex:    ["Strategy review","Reading reports","Investor update","Team 1:1 prep"],
+        hawk:    ["Reviewing PR #12","Code audit pass","Security scan 🔍","Checking test coverage","🦅 All clear","Bug found: line 47"],
     };
 
     // ── Agent state ───────────────────────────────────────────────
@@ -2681,9 +2684,10 @@ function initOfficePanel(data, container) {
         { id:"ernst",   name:"Ernst",   role:"Security",      shirtC:"#374151", hairC:"#111",    skinC:"#f1c27d", hx:ZONES.upperDesks[1].x+38, hy:HY_UP,  speed:0.95 },
         { id:"gordon",  name:"Gordon",  role:"Trading",       shirtC:"#059669", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.upperDesks[2].x+38, hy:HY_UP,  speed:1.05 },
         { id:"lara",    name:"Lara",    role:"Growth",        shirtC:"#ca8a04", hairC:"#fde047", skinC:"#f1c27d", hx:ZONES.upperDesks[3].x+38, hy:HY_UP,  speed:1.10, female:true },
-        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+38, hy:HY_LOW, speed:1.20 },
-        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+38, hy:HY_LOW, speed:1.00, female:true },
-        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+38, hy:HY_LOW, speed:0.90 },
+        { id:"hawk",   name:"Hawk",   role:"Code Reviewer", shirtC:"#92400e", hairC:"#1a1a1a", skinC:"#c68642", hx:ZONES.lowerDesks[0].x+38, hy:HY_LOW, speed:1.05 },
+        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[1].x+38, hy:HY_LOW, speed:1.20 },
+        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[2].x+38, hy:HY_LOW, speed:1.00, female:true },
+        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[3].x+38, hy:HY_LOW, speed:0.90 },
     ];
     // Build status map from API data (keyed by agent id, lowercase)
     const statusMap = {};
@@ -5977,41 +5981,88 @@ document.addEventListener("DOMContentLoaded", () => {
 // ──────────────────────────────────────────────────────────────────────────────
 function initDraggableSidebar() {
     const sidebar = document.querySelector(".sidebar");
-    if (!sidebar || typeof Sortable === "undefined") return;
+    if (!sidebar) return;
 
-    // Add drag handles to each sidebar-section header label
-    sidebar.querySelectorAll(".sidebar-label").forEach(label => {
-        label.style.cursor = "grab";
-        label.setAttribute("title", "Drag to reorder section");
-        label.innerHTML = `<span class="sidebar-drag-handle" style="opacity:0.4;font-size:0.7rem;margin-right:4px;user-select:none">⋮⋮</span>${label.innerHTML}`;
-    });
+    let dragSrc = null;
 
-    Sortable.create(sidebar, {
-        animation: 150,
-        handle: ".sidebar-label",
-        ghostClass: "sortable-ghost",
-        chosenClass: "sortable-chosen",
-        draggable: ".sidebar-section",
-        onEnd() {
-            const order = [...sidebar.querySelectorAll(".sidebar-section")].map(sec => {
-                return sec.querySelector(".sidebar-label")?.textContent?.trim().replace(/^⋮⋮\s*/, "") || "";
-            });
-            localStorage.setItem("sidebar_section_order", JSON.stringify(order));
-        }
-    });
-
-    // Restore saved order
-    try {
-        const saved = JSON.parse(localStorage.getItem("sidebar_section_order") || "null");
-        if (!saved || !Array.isArray(saved)) return;
-        const sections = [...sidebar.querySelectorAll(".sidebar-section")];
-        saved.forEach(labelText => {
-            const sec = sections.find(s => {
-                const t = s.querySelector(".sidebar-label")?.textContent?.trim().replace(/^⋮⋮\s*/, "") || "";
-                return t === labelText;
-            });
-            if (sec) sidebar.appendChild(sec);
+    function addHandles() {
+        sidebar.querySelectorAll(".sidebar-section").forEach(sec => {
+            const label = sec.querySelector(".sidebar-label");
+            if (!label || label.querySelector(".sidebar-drag-handle")) return;
+            const handle = document.createElement("span");
+            handle.className = "sidebar-drag-handle";
+            handle.textContent = "⠿";
+            handle.style.cssText = "opacity:0.45;font-size:0.85rem;margin-right:5px;cursor:grab;user-select:none;display:inline-block";
+            label.prepend(handle);
         });
-    } catch(_) {}
+    }
+
+    function applyDrag() {
+        sidebar.querySelectorAll(".sidebar-section").forEach(sec => {
+            sec.setAttribute("draggable", "true");
+
+            sec.addEventListener("dragstart", function(e) {
+                dragSrc = sec;
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", "");
+                setTimeout(() => sec.classList.add("sidebar-dragging"), 0);
+            });
+
+            sec.addEventListener("dragend", function() {
+                sec.classList.remove("sidebar-dragging");
+                sidebar.querySelectorAll(".sidebar-section").forEach(s => s.classList.remove("sidebar-drag-over"));
+                dragSrc = null;
+                saveOrder();
+            });
+
+            sec.addEventListener("dragover", function(e) {
+                if (!dragSrc || dragSrc === sec) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                sidebar.querySelectorAll(".sidebar-section").forEach(s => s.classList.remove("sidebar-drag-over"));
+                sec.classList.add("sidebar-drag-over");
+            });
+
+            sec.addEventListener("drop", function(e) {
+                if (!dragSrc || dragSrc === sec) return;
+                e.preventDefault();
+                const all = [...sidebar.querySelectorAll(".sidebar-section")];
+                const fromIdx = all.indexOf(dragSrc);
+                const toIdx = all.indexOf(sec);
+                if (fromIdx < toIdx) {
+                    sidebar.insertBefore(dragSrc, sec.nextSibling);
+                } else {
+                    sidebar.insertBefore(dragSrc, sec);
+                }
+                sidebar.querySelectorAll(".sidebar-section").forEach(s => s.classList.remove("sidebar-drag-over"));
+            });
+        });
+    }
+
+    function saveOrder() {
+        const order = [...sidebar.querySelectorAll(".sidebar-section")].map(sec => {
+            const h = sec.querySelector(".sidebar-label");
+            return h ? h.textContent.trim().replace(/^[⠿\s]+/, "") : "";
+        }).filter(Boolean);
+        localStorage.setItem("sidebar_section_order", JSON.stringify(order));
+    }
+
+    function restoreOrder() {
+        try {
+            const saved = JSON.parse(localStorage.getItem("sidebar_section_order") || "null");
+            if (!saved || !Array.isArray(saved) || !saved.length) return;
+            saved.forEach(labelText => {
+                const sec = [...sidebar.querySelectorAll(".sidebar-section")].find(s => {
+                    const h = s.querySelector(".sidebar-label");
+                    return h && h.textContent.trim().replace(/^[⠿\s]+/, "") === labelText;
+                });
+                if (sec) sidebar.appendChild(sec);
+            });
+        } catch(_) {}
+    }
+
+    restoreOrder();
+    addHandles();
+    applyDrag();
 }
 // Delete button fix deployed Mon Mar  9 21:25:04 CET 2026
