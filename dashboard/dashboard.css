@@ -1706,11 +1706,11 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     overflow: hidden;
 }
 
-.task-th-name     { width: 27%; }
+.task-th-name     { width: 26%; }
 .task-th-status   { width: 12%; }
 .task-th-assignee { width: 13%; }
-.task-th-date     { width: 11%; }
-.task-th-timeline { width: 22%; }
+.task-th-date     { width: 8%; min-width: 90px; }
+.task-th-timeline { width: 30%; padding-top: 4px; padding-bottom: 4px; vertical-align: bottom; }
 .task-th-actions  { width: 10%; text-align: right; }
 
 /* Task rows */
@@ -1781,6 +1781,74 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     border-radius: 4px;
     background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(255,255,255,0.06) 3px, rgba(255,255,255,0.06) 6px);
     opacity: 0.5;
+}
+
+/* No-date wrap: shows today hairline even without a bar */
+.task-tl-nodate-wrap {
+    background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(255,255,255,0.05) 3px, rgba(255,255,255,0.05) 6px);
+}
+
+/* Today hairline inside mini timeline bars */
+.task-tl-today {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    background: rgba(239, 68, 68, 0.7);
+    z-index: 1;
+    pointer-events: none;
+}
+
+/* Timeline column header: date range + today marker */
+.task-tl-th-wrap {
+    position: relative;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    font-size: 0.6rem;
+    font-weight: 400;
+    color: var(--text3);
+    letter-spacing: 0;
+    text-transform: none;
+    min-height: 28px;
+    padding-bottom: 2px;
+}
+
+.task-tl-th-start,
+.task-tl-th-end {
+    flex-shrink: 0;
+    opacity: 0.7;
+}
+
+.task-tl-th-today-lbl {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 0.6rem;
+    font-weight: 700;
+    color: #f87171;
+    white-space: nowrap;
+    bottom: 2px;
+}
+
+.task-tl-th-today-lbl::before {
+    content: "▼";
+    display: block;
+    font-size: 0.5rem;
+    text-align: center;
+    margin-bottom: -1px;
+}
+
+/* Main task rows: bold name */
+.task-row-main .task-name-input {
+    font-weight: 700;
+}
+
+/* Subtask rows: italic name, slightly muted */
+.task-row-sub .task-name-input {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--text2, #aaa);
+    font-size: 0.79rem;
 }
 
 /* Expand / collapse toggle */

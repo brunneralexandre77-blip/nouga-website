@@ -1870,7 +1870,9 @@ function _miniTimelineBarHtml(task) {
     const totalMs       = WEEKS_TOTAL * msPerWeek;
 
     const rawDate = task.target_date || task.due_date;
-    if (!rawDate) return `<div class="task-tl-nodate" title="No target date set"></div>`;
+    const todayPct = (WEEKS_BEFORE / WEEKS_TOTAL * 100).toFixed(1);
+    const todayLine = `<div class="task-tl-today" style="left:${todayPct}%"></div>`;
+    if (!rawDate) return `<div class="task-tl-wrap task-tl-nodate-wrap" title="No target date set">${todayLine}</div>`;
 
     const endDate   = new Date(rawDate);
     const status    = task.status || "todo";
@@ -1892,7 +1894,7 @@ function _miniTimelineBarHtml(task) {
 
     if (rightPct <= 0 || leftPct >= 100) {
         const dueStr = endDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-        return `<div class="task-tl-nodate" title="${escHtml(dueStr)} — out of view"></div>`;
+        return `<div class="task-tl-wrap task-tl-nodate-wrap" title="${escHtml(dueStr)} — out of view">${todayLine}</div>`;
     }
 
     const isOverdue = rawDate && endDate < today && status !== "done";
@@ -1905,6 +1907,7 @@ function _miniTimelineBarHtml(task) {
     const tooltip  = `${dueLabel}${isOverdue ? " ⚠ Overdue" : ""}`;
 
     return `<div class="task-tl-wrap" title="${escHtml(tooltip)}">
+        ${todayLine}
         <div class="task-tl-bar ${barClass}" style="left:${clampedL.toFixed(1)}%;width:${clampedW.toFixed(1)}%"></div>
     </div>`;
 }
@@ -2008,7 +2011,7 @@ function renderTaskList(tasks, project) {
         }
 
         let rows = `
-        <tr class="task-row" data-task-id="${task.id}" draggable="true">
+        <tr class="task-row${depth > 0 ? ' task-row-sub' : ' task-row-main'}" data-task-id="${task.id}" draggable="true">
             <td class="task-cell-name" style="padding-left:${12 + indent}px">
                 ${depth > 0 ? `<span class="task-subtask-indent"></span>` : ""}
                 ${expandBtn}
@@ -2045,6 +2048,18 @@ function renderTaskList(tasks, project) {
 
     const tableRows = roots.map(t => renderTaskRow(t, 0)).join("");
 
+    // Build timeline column header showing date range + today marker
+    { const _tlNow = new Date(), _tlWB = 2, _tlWT = 12, _tlMs = 7 * 24 * 3600 * 1000;
+      const _tlStart = new Date(_tlNow.getTime() - _tlWB * _tlMs);
+      const _tlEnd   = new Date(_tlNow.getTime() + (_tlWT - _tlWB) * _tlMs);
+      const _tlTodayPct = (_tlWB / _tlWT * 100).toFixed(1);
+      const _tlFmt = d => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      window._tlThHtml = `<div class="task-tl-th-wrap">` +
+        `<span class="task-tl-th-start">${_tlFmt(_tlStart)}</span>` +
+        `<span class="task-tl-th-today-lbl" style="left:${_tlTodayPct}%">Today</span>` +
+        `<span class="task-tl-th-end">${_tlFmt(_tlEnd)}</span>` +
+        `</div>`; }
+
     viewBody.innerHTML = `
         <table class="task-table">
             <thead>
@@ -2052,8 +2067,8 @@ function renderTaskList(tasks, project) {
                     <th class="task-th task-th-name">Task Name</th>
                     <th class="task-th task-th-status">Status</th>
                     <th class="task-th task-th-assignee">Assigned To</th>
-                    <th class="task-th task-th-date">Target Date</th>
-                    <th class="task-th task-th-timeline">Timeline</th>
+                    <th class="task-th task-th-date">Date</th>
+                    <th class="task-th task-th-timeline">${window._tlThHtml}</th>
                     <th class="task-th task-th-actions">Actions</th>
                 </tr>
             </thead>
