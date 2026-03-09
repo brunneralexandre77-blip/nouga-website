@@ -1691,7 +1691,7 @@ function _renderProjectCard(p, depth) {
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
                         ${badge(p.label, statusColor(p.status))}
-                        ${p.db_id ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>` : ""}
+                        ${p.id ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>` : ""}
                         <span style="font-size:0.75rem;color:var(--text3)">›</span>
                     </div>
                 </div>
