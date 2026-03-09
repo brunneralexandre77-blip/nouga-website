@@ -5853,3 +5853,4 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(checkHealth,     60000);
     updateClock();
 });
+// Delete button fix deployed Mon Mar  9 21:25:04 CET 2026
