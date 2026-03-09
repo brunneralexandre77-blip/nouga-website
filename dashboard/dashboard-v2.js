@@ -124,11 +124,16 @@ function initWebSocket() {
         _addNotif(notif);
         _showToast(notif);
         _bumpBadge();
-        const reload = { task: "tasks", agent: "agents", cron: "calendar", council: "council" };
-        if (reload[notif.type] && activePanel === reload[notif.type]) {
-            // Debounce: if many notifications arrive in quick succession, only reload once.
-            if (wsReloadDebounce) clearTimeout(wsReloadDebounce);
-            wsReloadDebounce = setTimeout(() => loadPanel(activePanel), 1000);
+        const panelMap = { task: "tasks", agent: "agents", cron: "calendar", council: "council" };
+        const affectedPanel = panelMap[notif.type];
+        if (affectedPanel) {
+            // Always bust the panel cache so stale data never shows after a change
+            delete panelCache[affectedPanel];
+            // If the user is currently on this panel, reload it live
+            if (activePanel === affectedPanel) {
+                if (wsReloadDebounce) clearTimeout(wsReloadDebounce);
+                wsReloadDebounce = setTimeout(() => loadPanel(activePanel), 1000);
+            }
         }
     });
 }
@@ -1691,7 +1696,7 @@ function _renderProjectCard(p, depth) {
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
                         ${badge(p.label, statusColor(p.status))}
-                        ${p.id ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>` : ""}
+                        <button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id || ""}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>
                         <span style="font-size:0.75rem;color:var(--text3)">›</span>
                     </div>
                 </div>
@@ -1709,7 +1714,20 @@ function _renderProjectCard(p, depth) {
         </div>`;
 }
 
+function _hiddenProjects() {
+    try { return new Set(JSON.parse(localStorage.getItem("_hiddenProjects") || "[]")); }
+    catch { return new Set(); }
+}
+function _hideProject(name) {
+    const s = _hiddenProjects(); s.add(name);
+    localStorage.setItem("_hiddenProjects", JSON.stringify([...s]));
+}
+
 function renderProjects(d) {
+    // Filter out locally-deleted static projects
+    const hidden = _hiddenProjects();
+    d = { ...d, projects: d.projects.filter(p => !hidden.has(p.name)) };
+
     // Demo: give "Mission Control Dashboard" sub-projects if the API doesn't provide them
     const mcd = d.projects.find(p => p.name && p.name.toLowerCase().includes("mission control"));
     if (mcd && !mcd.children) {
@@ -1810,11 +1828,18 @@ function initProjectsPanel(data, el) {
                 confirmBtn.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></span> Deleting…`;
 
                 try {
-                    await apiDelete(`projects/${dbId}`);
+                    if (dbId) {
+                        // User-created DB project — delete via API
+                        await apiDelete(`projects/${dbId}`);
+                    } else {
+                        // Static/hardcoded project — hide client-side via localStorage
+                        _hideProject(name);
+                    }
                     modal.remove();
 
                     // Animate the card out before reloading
-                    const card = el.querySelector(`[data-db-id="${dbId}"]`)?.closest(".project-tree-item");
+                    const cardBtn = el.querySelector(`.project-delete-btn[data-name="${name}"]`);
+                    const card = cardBtn?.closest(".project-tree-item");
                     if (card) {
                         card.style.transition = "opacity 0.25s, transform 0.25s";
                         card.style.opacity = "0";
