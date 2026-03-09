@@ -2612,7 +2612,7 @@ function renderOffice(d) {
             <div class="panel-subtitle">Pixel art · live agents · click to interact</div>
         </div>
         <div class="office-canvas-wrap">
-            <canvas id="office-canvas" class="office-canvas" width="640" height="560" style="width:100%;height:auto;max-height:660px"></canvas>
+            <canvas id="office-canvas" class="office-canvas" width="640" height="620" style="width:100%;height:auto;max-height:720px"></canvas>
             <div class="office-sidebar">
                 <div class="office-agent-box" id="office-agent-info">
                     <div class="office-hint">Click an agent or object</div>
@@ -2654,7 +2654,7 @@ function _startOfficeCanvas(data, container) {
     const canvas = container.querySelector("#office-canvas");
     if (!canvas) return;
 
-    const CW = 640, CH = 560;
+    const CW = 640, CH = 620;
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
 
@@ -2677,7 +2677,7 @@ function _startOfficeCanvas(data, container) {
             { x: 492, y: 232, agent: "alex"    },
         ],
         coffee:  { x: 268, y: 430, w: 240, h: 90 },
-        meeting: { x: 14,  y: 330, w: 160, h: 152 },
+        meeting: { x: 14,  y: 430, w: 160, h: 152 },
     };
     // Coffee machine position inside the break room zone
     const CM_X = ZONES.coffee.x + 88;   // x=356
@@ -2982,21 +2982,21 @@ function _startOfficeCanvas(data, container) {
         ctx.fillStyle = "#c0b8ac"; ctx.fillRect(0, 58, CW, 6);
         ctx.fillStyle = "#d4ccc0"; ctx.fillRect(0, 58, CW, 2); // highlight
 
-        // ── Meeting room north wall  (y=330, x=14–174) ───────────────
-        hw(14, 330, 160);
+        // ── Meeting room north wall  (y=430, x=14–174) ───────────────
+        hw(14, 430, 160);
 
-        // ── Meeting room east wall  (x=174, y=330–482) — glass + door ─
-        vg(174, 330, 54);               // top glass panel
-        // door gap: y=384 to y=422 (h=38)
-        doorV(174, 384, 38);
-        vg(174, 422, 60);               // bottom glass panel
-        vcap(174, 330);                 // top cap once at wall top
+        // ── Meeting room east wall  (x=174, y=430–582) — glass + door ─
+        vg(174, 430, 54);               // top glass panel
+        // door gap: y=484 to y=522 (h=38)
+        doorV(174, 484, 38);
+        vg(174, 522, 60);               // bottom glass panel
+        vcap(174, 430);                 // top cap once at wall top
 
-        // ── Meeting room south wall  (y=482, x=14–174) ───────────────
+        // ── Meeting room south wall  (y=582, x=14–174) ───────────────
         // door gap: x=90 to x=118 (w=28)
-        hw(14,  482, 76);
-        hw(118, 482, 56);
-        doorH(90, 482, 28);
+        hw(14,  582, 76);
+        hw(118, 582, 56);
+        doorH(90, 582, 28);
 
         // ── Break room north wall  (y=430, x=268–508) ────────────────
         // door gap: x=312 to x=344 (w=32)
@@ -3010,7 +3010,7 @@ function _startOfficeCanvas(data, container) {
 
         // ── Floor shadows beneath walls ──────────────────────────────
         ctx.fillStyle = "rgba(0,0,0,0.06)";
-        ctx.fillRect(14,  482, 160, 4); // meeting south
+        ctx.fillRect(14,  582, 160, 4); // meeting south
         ctx.fillRect(268, 430, 240, 4); // break room north
         ctx.fillRect(268, 430,   4, 90); // break room west (east shadow)
     }
