@@ -4038,6 +4038,37 @@ function renderSkills() {
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 24px">
                 ${pendingRows}
             </div>
+        </div>
+        
+        <!-- Hawk Code Review Section -->
+        <div class="card" style="margin-top:16px;border-left:3px solid var(--green2)">
+            <div class="card-title">🦅 Hawk Code Review</div>
+            <div style="display:flex;gap:16px;margin-bottom:12px">
+                <div style="flex:1">
+                    <div style="font-size:0.8rem;color:var(--text3);margin-bottom:4px">Status</div>
+                    <div style="font-weight:600;color:var(--green2)">🟢 Active & Ready</div>
+                </div>
+                <div style="flex:1">
+                    <div style="font-size:0.8rem;color:var(--text3);margin-bottom:4px">Pending Reviews</div>
+                    <div style="font-weight:600">0</div>
+                </div>
+                <div style="flex:1">
+                    <div style="font-size:0.8rem;color:var(--text3);margin-bottom:4px">Last Review</div>
+                    <div style="font-weight:600">-</div>
+                </div>
+            </div>
+            <div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:6px;margin-bottom:12px">
+                <div style="font-size:0.8rem;color:var(--text3);margin-bottom:8px">How to use:</div>
+                <ol style="margin:0;padding-left:20px;font-size:0.85rem;color:var(--text2)">
+                    <li>Claude completes code changes</li>
+                    <li>Submit to Hawk for review</li>
+                    <li>Hawk checks: bugs, security, performance</li>
+                    <li>Approve → Deploy | Reject → Fix → Resubmit</li>
+                </ol>
+            </div>
+            <button class="btn-primary" style="width:100%" onclick="alert('Submit code to Hawk for review - Feature coming soon')">
+                🦅 Submit Code for Review
+            </button>
         </div>`;
 }
 
