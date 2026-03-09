@@ -3910,6 +3910,8 @@ const SKILLS_DATA = {
         { name: "Elite Frontend UX",    icon: "💎", usedBy: "Claude",      status: "active", desc: "Production-grade interfaces" },
         { name: "Claude Code MCP",      icon: "🔧", usedBy: "Claude",      status: "active", desc: "Full MCP tool access" },
         { name: "Antfarm Workflows",    icon: "🐜", usedBy: "Milfred",     status: "active", desc: "Multi-agent orchestration" },
+        { name: "RTK (Token Optimizer)", icon: "🚀", usedBy: "All agents",  status: "active", desc: "Reduces tokens by 60-90%" },
+        { name: "Hawk (Code Reviewer)",  icon: "🦅", usedBy: "Alex",        status: "active", desc: "Reviews code before deployment" },
     ],
     agents: [
         {
