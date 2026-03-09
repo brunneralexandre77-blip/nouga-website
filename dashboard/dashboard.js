@@ -1940,7 +1940,7 @@ async function renderProjectDetail(project) {
         </div>
     </div>`;
 
-    $("task-back").onclick = () => loadPanel("projects");
+    $("task-back").onclick = () => { _taskViewProject = null; loadPanel("projects"); };
 
     try {
         const tasksData = await fetchData("tasks");
@@ -4632,9 +4632,14 @@ async function loadPanel(panelId) {
     if (!hasCache) {
         // First load: show spinner (no content yet)
         el.innerHTML = loading();
-    } else if (!(panelId === "projects" && $("task-view-body"))) {
-        // Subsequent refresh: keep existing content, show a subtle "refreshing" badge
-        // (but skip if the user is currently viewing a project's task list)
+    } else if (panelId === "projects" && _taskViewProject !== null) {
+        // Auto-refresh while user is viewing a project detail — don't touch the panel
+    } else {
+        // Subsequent refresh: if we were just showing a task-detail view, restore
+        // the cached projects list immediately so the user doesn't see a stale task view
+        if (panelId === "projects" && el.querySelector(".task-view")) {
+            el.innerHTML = panelCache[panelId].html;
+        }
         _showStaleIndicator(el, "↻ refreshing…", "var(--yellow,#f5a623)");
     }
 
@@ -4650,7 +4655,7 @@ async function loadPanel(panelId) {
         // Success — update cache and render
         panelCache[panelId] = { data, html, ts: Date.now() };
         // Don't overwrite an active task-list view (user clicked a project while this fetch was in flight)
-        if (panelId === "projects" && $("task-view-body")) {
+        if (panelId === "projects" && _taskViewProject !== null) {
             console.log("[loadPanel] projects fetch succeeded but task view is active — cache updated, skipping render");
         } else {
             el.innerHTML = html;
@@ -4661,7 +4666,7 @@ async function loadPanel(panelId) {
     } catch(e) {
         console.error(`[loadPanel] failed to load panel "${panelId}":`, e);
         // Don't overwrite an active task-list view with a projects-panel error
-        if (panelId === "projects" && $("task-view-body")) {
+        if (panelId === "projects" && _taskViewProject !== null) {
             console.log("[loadPanel] projects fetch failed but task view is active — suppressing error overlay");
         } else if (hasCache) {
             // Content already loaded once — restore it and show a non-intrusive warning
@@ -4698,8 +4703,8 @@ function startRefresh() {
     if (refreshTimer) clearInterval(refreshTimer);
     refreshTimer = setInterval(() => {
         if (!activePanel) return;
-        // Don't overwrite the task-list view — if task-view-body is present, user is viewing a project
-        if (activePanel === "projects" && $("task-view-body")) {
+        // Don't overwrite the task-list view — if a project detail is open, skip auto-refresh
+        if (activePanel === "projects" && _taskViewProject !== null) {
             console.log("[Refresh] skipping auto-refresh — task view is active");
             return;
         }
