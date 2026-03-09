@@ -5867,6 +5867,36 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // Draggable sidebar sections (Task 5)
+    (function initDraggableSidebar() {
+        const sidebar = document.querySelector(".sidebar");
+        if (!sidebar || typeof Sortable === "undefined") return;
+        const sections = sidebar.querySelectorAll(".sidebar-section");
+        sections.forEach(s => {
+            const lbl = s.querySelector(".sidebar-label");
+            if (lbl) { lbl.style.cursor = "grab"; lbl.title = "Drag to reorder"; }
+        });
+        Sortable.create(sidebar, {
+            animation: 150,
+            handle: ".sidebar-label",
+            ghostClass: "sortable-ghost",
+            onEnd() {
+                const order = [...sidebar.querySelectorAll(".sidebar-label")].map(l => l.textContent.trim());
+                localStorage.setItem("_sidebarOrder", JSON.stringify(order));
+            }
+        });
+        // Restore saved order
+        try {
+            const saved = JSON.parse(localStorage.getItem("_sidebarOrder") || "null");
+            if (saved) {
+                saved.forEach(label => {
+                    const sec = [...sidebar.querySelectorAll(".sidebar-section")].find(s => s.querySelector(".sidebar-label")?.textContent.trim() === label);
+                    if (sec) sidebar.appendChild(sec);
+                });
+            }
+        } catch {}
+    })();
+
     navigate("tasks");
     startRefresh();
     checkHealth();
