@@ -1691,6 +1691,7 @@ function _renderProjectCard(p, depth) {
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
                         ${badge(p.label, statusColor(p.status))}
+                        ${p.db_id ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>` : ""}
                         <span style="font-size:0.75rem;color:var(--text3)">›</span>
                     </div>
                 </div>
@@ -1734,13 +1735,68 @@ function renderProjects(d) {
 
     return `
         <div class="panel-header">
-            <div class="panel-title">🗂️ Projects</div>
-            <div class="panel-subtitle">${subtitle}</div>
+            <div>
+                <div class="panel-title">🗂️ Projects</div>
+                <div class="panel-subtitle">${subtitle}</div>
+            </div>
+            <button class="btn btn-primary" id="new-project-btn" style="font-size:0.8rem;padding:5px 12px">+ New Project</button>
         </div>
         ${d.projects.map(p => _renderProjectCard(p, 0)).join("")}`;
 }
 
 function initProjectsPanel(data, el) {
+    // Create new project
+    el.querySelector("#new-project-btn")?.addEventListener("click", () => {
+        const modal = createModal({
+            title: "Create New Project",
+            body: `
+                <div style="display:flex;flex-direction:column;gap:14px">
+                    <div>
+                        <label style="font-size:0.8rem;color:var(--text3);display:block;margin-bottom:6px">Project Name *</label>
+                        <input id="new-proj-name" class="form-input" placeholder="My Project" style="width:100%">
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem;color:var(--text3);display:block;margin-bottom:6px">Description</label>
+                        <input id="new-proj-desc" class="form-input" placeholder="What is this project about?" style="width:100%">
+                    </div>
+                    <div>
+                        <label style="font-size:0.8rem;color:var(--text3);display:block;margin-bottom:6px">Emoji</label>
+                        <input id="new-proj-emoji" class="form-input" placeholder="📁" style="width:80px">
+                    </div>
+                </div>`,
+            footer: `<button class="btn btn-ghost" id="new-proj-cancel">Cancel</button>
+                     <button class="btn btn-primary" id="new-proj-submit">Create Project</button>`,
+        });
+        modal.querySelector("#new-proj-cancel").onclick = () => modal.remove();
+        modal.querySelector("#new-proj-submit").onclick = async () => {
+            const name = modal.querySelector("#new-proj-name").value.trim();
+            const desc = modal.querySelector("#new-proj-desc").value.trim();
+            const emoji = modal.querySelector("#new-proj-emoji").value.trim() || "📁";
+            if (!name) { modal.querySelector("#new-proj-name").focus(); return; }
+            try {
+                await apiPost("projects", { name, description: desc, emoji, status: "active" });
+                modal.remove();
+                showNotif("Project created!", "green");
+                loadPanel("projects");
+            } catch(e) { showNotif("Failed: " + e.message, "red"); }
+        };
+        setTimeout(() => modal.querySelector("#new-proj-name")?.focus(), 50);
+    });
+
+    // Delete project (DB projects only)
+    el.querySelectorAll(".project-delete-btn").forEach(btn => {
+        btn.addEventListener("click", async e => {
+            e.stopPropagation();
+            const { dbId, name } = btn.dataset;
+            if (!confirm(`Delete project "${name}"?\n\nThis cannot be undone.`)) return;
+            try {
+                await apiDelete(`projects/${dbId}`);
+                showNotif(`Project "${name}" deleted`, "green");
+                loadPanel("projects");
+            } catch(e) { showNotif("Failed: " + e.message, "red"); }
+        });
+    });
+
     // Expand / collapse toggle buttons
     el.querySelectorAll(".tree-toggle-btn").forEach(btn => {
         btn.addEventListener("click", e => {
@@ -1754,9 +1810,10 @@ function initProjectsPanel(data, el) {
         });
     });
 
-    // Card click → drill-down (project-card, not the toggle button)
+    // Card click → drill-down (project-card, not the toggle button or delete button)
     el.querySelectorAll(".project-card").forEach(card => {
-        card.addEventListener("click", () => {
+        card.addEventListener("click", e => {
+            if (e.target.closest(".project-delete-btn")) return;
             const treeId  = card.dataset.treeId;
             const project = window._projectTreeMap?.[treeId];
             if (!project) return;
@@ -4834,6 +4891,7 @@ async function initWorkflowsPanel(_, el) {
     async function reload() {
         body.innerHTML = `<div class="loading"><div class="spinner"></div> Loading…</div>`;
 
+        const PRIO_ORDER = { high: 0, normal: 1, low: 2 };
         let agents = [], allTasks = [], runs = [], wfDefs = [];
         try {
             const [agentsRes, tasksRes] = await Promise.all([
@@ -4859,7 +4917,14 @@ async function initWorkflowsPanel(_, el) {
         // ── Agent grid ────────────────────────────────────────────────────────
         const agentCardsHtml = agents.map(a => {
             const statusCfg  = AGENT_STATUS_CFG[a.status] || AGENT_STATUS_CFG.idle;
-            const agentTasks = allTasks.filter(t => (t.assignee||"").toLowerCase() === a.name.toLowerCase());
+            // Sort tasks: active first, then by priority, done last
+            const agentTasks = allTasks
+                .filter(t => (t.assignee||"").toLowerCase() === a.name.toLowerCase())
+                .sort((x, y) => {
+                    const statusRank = s => s === "in_progress" ? 0 : s === "todo" ? 1 : 2;
+                    if (statusRank(x.status) !== statusRank(y.status)) return statusRank(x.status) - statusRank(y.status);
+                    return (PRIO_ORDER[x.priority] ?? 1) - (PRIO_ORDER[y.priority] ?? 1);
+                });
             const current    = agentTasks.find(t => t.status === "in_progress");
             const pending    = agentTasks.filter(t => t.status === "todo");
             const queueCount = pending.length;
@@ -4870,29 +4935,41 @@ async function initWorkflowsPanel(_, el) {
                 const pc = PRIORITY_CFG[t.priority] || PRIORITY_CFG.normal;
                 const statusLabel = t.status === "in_progress" ? "Active" : t.status === "done" ? "Done" : "Pending";
                 const statusColor = t.status === "in_progress" ? "#60a5fa" : t.status === "done" ? "#22c55e" : "#888";
+                const doneBtn = t.status === "in_progress"
+                    ? `<button class="btn btn-ghost ah-complete-btn" data-task-id="${t.id}" data-agent-name="${escHtml(a.name)}" style="font-size:0.7rem;padding:2px 6px;color:#22c55e;border-color:#22c55e44">✓ Done</button>`
+                    : "";
                 return `<tr class="ah-queue-row">
                     <td style="padding:5px 8px">
                         <span title="${escHtml(pc.label)}" style="cursor:pointer;font-size:0.85rem" class="ah-priority-toggle" data-task-id="${t.id}" data-priority="${t.priority}">${pc.dot}</span>
                     </td>
-                    <td style="padding:5px 8px;font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(t.title)}">${escHtml(t.title)}</td>
+                    <td style="padding:5px 8px;font-size:0.82rem;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(t.title)}">${escHtml(t.title)}</td>
                     <td style="padding:5px 8px"><span style="font-size:0.72rem;color:${statusColor}">${statusLabel}</span></td>
                     <td style="padding:5px 8px;text-align:right;white-space:nowrap">
+                        ${doneBtn}
                         <button class="btn btn-ghost ah-reassign-btn" data-task-id="${t.id}" style="font-size:0.7rem;padding:2px 6px">Move</button>
                         <button class="btn btn-ghost ah-delete-btn" data-task-id="${t.id}" style="font-size:0.7rem;padding:2px 6px;color:var(--red,#f87171)">✕</button>
                     </td>
                 </tr>`;
             }).join("");
 
+            // Compute effective status for display
+            const effStatus = current ? "active" : (queueCount > 0 ? "idle" : a.status || "idle");
+            const effCfg = AGENT_STATUS_CFG[effStatus] || AGENT_STATUS_CFG.idle;
+            const statusHint = current
+                ? `Working · ${queueCount} queued`
+                : queueCount > 0
+                    ? `🟡 ${queueCount} task${queueCount>1?"s":""} waiting — idle`
+                    : "Idle — no tasks";
+
             return `<div class="ah-agent-card" data-agent-id="${escHtml(a.id)}">
                 <div class="ah-card-header">
                     <span class="ah-agent-emoji">${escHtml(a.emoji||"🤖")}</span>
                     <div class="ah-agent-info">
                         <div class="ah-agent-name">${escHtml(a.name)}</div>
-                        <div class="ah-agent-role">${escHtml(a.role)}</div>
+                        <div class="ah-agent-role" style="font-size:0.7rem;color:var(--text3)">${escHtml(statusHint)}</div>
                     </div>
                     <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
-                        <span class="ah-status-dot" style="background:${statusCfg.dot}" title="${statusCfg.label}"></span>
-                        <span style="font-size:0.72rem;color:var(--text3)">${statusCfg.label}</span>
+                        <span class="ah-status-dot" style="background:${effCfg.dot}" title="${effCfg.label}"></span>
                         ${queueCount > 0 ? `<span class="ah-queue-badge">${queueCount}</span>` : ""}
                         <button class="btn btn-ghost ah-assign-btn" data-agent-id="${escHtml(a.id)}" data-agent-name="${escHtml(a.name)}" style="font-size:0.72rem;padding:2px 8px">+ Task</button>
                         <button class="ah-expand-btn" data-agent-id="${escHtml(a.id)}">${isExpanded ? "▲" : "▼"}</button>
@@ -4901,7 +4978,7 @@ async function initWorkflowsPanel(_, el) {
                 ${current ? `<div class="ah-current-task"><span style="color:var(--blue,#60a5fa);font-size:0.72rem;font-weight:600">▶ ACTIVE</span> <span style="font-size:0.8rem">${escHtml(current.title)}</span></div>` : ""}
                 <div class="ah-queue-wrap${isExpanded ? " open" : ""}">
                     ${agentTasks.length === 0
-                        ? `<div style="padding:10px 12px;font-size:0.78rem;color:var(--text3)">No tasks assigned</div>`
+                        ? `<div style="padding:10px 12px;font-size:0.78rem;color:var(--text3)">No tasks assigned — click + Task to add</div>`
                         : `<table style="width:100%;border-collapse:collapse"><tbody>${queueRowsHtml}</tbody></table>`}
                 </div>
             </div>`;
@@ -4927,6 +5004,37 @@ async function initWorkflowsPanel(_, el) {
                     </tr>`;
                }).join("")}</tbody></table>`;
 
+        // ── Summary widget ────────────────────────────────────────────────────
+        const activeAgents = agents.filter(a => allTasks.some(t => t.status === "in_progress" && (t.assignee||"").toLowerCase() === a.name.toLowerCase()));
+        const idleWithTasks = agents.filter(a => {
+            const aTasks = allTasks.filter(t => (t.assignee||"").toLowerCase() === a.name.toLowerCase());
+            return !aTasks.find(t => t.status === "in_progress") && aTasks.find(t => t.status === "todo");
+        });
+        const totalQueued = allTasks.filter(t => t.status === "todo").length;
+
+        const summaryHtml = `
+            <div style="display:flex;gap:12px;flex-wrap:wrap;padding:12px 0;border-bottom:1px solid var(--border1,#2a2a40);margin-bottom:8px">
+                <div style="background:var(--bg2);border-radius:8px;padding:10px 16px;min-width:120px;text-align:center">
+                    <div style="font-size:1.4rem;font-weight:700;color:#22c55e">${activeAgents.length}</div>
+                    <div style="font-size:0.72rem;color:var(--text3)">Active agents</div>
+                </div>
+                <div style="background:var(--bg2);border-radius:8px;padding:10px 16px;min-width:120px;text-align:center">
+                    <div style="font-size:1.4rem;font-weight:700;color:#f5a623">${idleWithTasks.length}</div>
+                    <div style="font-size:0.72rem;color:var(--text3)">Idle with queue</div>
+                </div>
+                <div style="background:var(--bg2);border-radius:8px;padding:10px 16px;min-width:120px;text-align:center">
+                    <div style="font-size:1.4rem;font-weight:700;color:#60a5fa">${totalQueued}</div>
+                    <div style="font-size:0.72rem;color:var(--text3)">Tasks queued</div>
+                </div>
+                <div style="margin-left:auto;display:flex;align-items:center;gap:10px">
+                    <label style="font-size:0.78rem;color:var(--text2);display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" id="ah-auto-assign" ${window._ahAutoAssign !== false ? "checked" : ""} style="width:14px;height:14px">
+                        Auto-assign new tasks
+                    </label>
+                    <button class="btn btn-primary" id="ah-new-task-global" style="font-size:0.78rem;padding:4px 12px">+ New Task</button>
+                </div>
+            </div>`;
+
         body.innerHTML = `
             <div>
                 <div class="ah-section-hdr">
@@ -4935,6 +5043,7 @@ async function initWorkflowsPanel(_, el) {
                         <button class="btn btn-ghost" id="ah-pause-all" style="font-size:0.72rem;padding:2px 8px">⏸ Pause All</button>
                     </div>
                 </div>
+                ${summaryHtml}
                 <div class="ah-agent-grid">${agentCardsHtml}</div>
             </div>
             <div>
@@ -5011,17 +5120,105 @@ async function initWorkflowsPanel(_, el) {
             });
         });
 
-        // + Task button → assign new task to agent
-        el.querySelectorAll(".ah-assign-btn").forEach(btn => {
-            btn.addEventListener("click", async () => {
-                const agentName = btn.dataset.agentName;
-                const title = prompt(`New task for ${agentName}:`, "");
-                if (!title?.trim()) return;
+        // Auto-assign toggle
+        el.querySelector("#ah-auto-assign")?.addEventListener("change", e => {
+            window._ahAutoAssign = e.target.checked;
+        });
+
+        // Helper: open add-task modal
+        function openAddTaskModal(presetAgent) {
+            const agentOpts = agents.map(a =>
+                `<option value="${escHtml(a.name)}"${a.name === presetAgent ? " selected" : ""}>${escHtml(a.emoji||"🤖")} ${escHtml(a.name)}</option>`
+            ).join("");
+            const modal = document.createElement("div");
+            modal.className = "modal-overlay";
+            modal.innerHTML = `
+                <div class="modal" style="max-width:440px">
+                    <div class="modal-header">
+                        <div class="modal-title">+ New Task</div>
+                        <button class="modal-close">✕</button>
+                    </div>
+                    <div class="modal-body" style="display:flex;flex-direction:column;gap:14px;padding:20px">
+                        <div>
+                            <label style="font-size:0.8rem;color:var(--text3);display:block;margin-bottom:6px">Task Title *</label>
+                            <input id="ah-task-title" class="form-input" placeholder="What needs to be done?" style="width:100%">
+                        </div>
+                        <div style="display:flex;gap:10px">
+                            <div style="flex:1">
+                                <label style="font-size:0.8rem;color:var(--text3);display:block;margin-bottom:6px">Priority</label>
+                                <select id="ah-task-priority" class="form-input">
+                                    <option value="high">🔴 High</option>
+                                    <option value="normal" selected>🟡 Medium</option>
+                                    <option value="low">🟢 Low</option>
+                                </select>
+                            </div>
+                            <div style="flex:1">
+                                <label style="font-size:0.8rem;color:var(--text3);display:block;margin-bottom:6px">Assign to</label>
+                                <select id="ah-task-agent" class="form-input">${agentOpts}</select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-ghost" id="ah-task-cancel">Cancel</button>
+                        <button class="btn btn-primary" id="ah-task-submit">Add Task</button>
+                    </div>
+                </div>`;
+            document.body.appendChild(modal);
+            modal.querySelector(".modal-close").onclick = () => modal.remove();
+            modal.querySelector("#ah-task-cancel").onclick = () => modal.remove();
+            modal.addEventListener("click", e => { if (e.target === modal) modal.remove(); });
+
+            // Auto-assign: pre-select least-loaded agent if no preset
+            if (!presetAgent && window._ahAutoAssign !== false) {
+                const agentLoads = agents.map(a => ({
+                    name: a.name,
+                    load: allTasks.filter(t => (t.assignee||"").toLowerCase() === a.name.toLowerCase() && t.status !== "done").length,
+                })).sort((a, b) => a.load - b.load);
+                if (agentLoads.length) modal.querySelector("#ah-task-agent").value = agentLoads[0].name;
+            }
+
+            modal.querySelector("#ah-task-submit").onclick = async () => {
+                const title    = modal.querySelector("#ah-task-title").value.trim();
+                const priority = modal.querySelector("#ah-task-priority").value;
+                const assignee = modal.querySelector("#ah-task-agent").value;
+                if (!title) { modal.querySelector("#ah-task-title").focus(); return; }
                 try {
-                    await apiPost("tasks", { title: title.trim(), assignee: agentName, status: "todo" });
-                    showNotif(`Task added for ${agentName}`, "green");
+                    await apiPost("tasks", { title, priority, assignee, status: "todo" });
+                    modal.remove();
+                    showNotif(`Task added${assignee ? ` for ${assignee}` : ""}`, "green");
                     reload();
                 } catch(e) { showNotif("Failed to add task", "red"); }
+            };
+            setTimeout(() => modal.querySelector("#ah-task-title")?.focus(), 50);
+        }
+
+        // Global "+ New Task" button
+        el.querySelector("#ah-new-task-global")?.addEventListener("click", () => openAddTaskModal(null));
+
+        // + Task button per agent
+        el.querySelectorAll(".ah-assign-btn").forEach(btn => {
+            btn.addEventListener("click", () => openAddTaskModal(btn.dataset.agentName));
+        });
+
+        // Complete task → mark done, auto-start next pending task for same agent
+        el.querySelectorAll(".ah-complete-btn").forEach(btn => {
+            btn.addEventListener("click", async () => {
+                const taskId   = btn.dataset.taskId;
+                const agentName = btn.dataset.agentName;
+                try {
+                    await apiPut(`tasks/${taskId}`, { status: "done" });
+                    // Auto-start next highest-priority pending task for this agent
+                    const agentTasks = allTasks.filter(t =>
+                        (t.assignee||"").toLowerCase() === agentName.toLowerCase() && t.status === "todo"
+                    ).sort((a, b) => (PRIO_ORDER[a.priority] ?? 1) - (PRIO_ORDER[b.priority] ?? 1));
+                    if (agentTasks.length > 0) {
+                        await apiPut(`tasks/${agentTasks[0].id}`, { status: "in_progress" });
+                        showNotif(`${agentName} started: "${agentTasks[0].title}"`, "green");
+                    } else {
+                        showNotif(`${agentName} is now idle — no more tasks queued`, "green");
+                    }
+                    reload();
+                } catch(e) { showNotif("Failed to complete task: " + e.message, "red"); }
             });
         });
 
