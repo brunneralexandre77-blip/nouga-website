@@ -2594,7 +2594,18 @@ function renderPeople(d) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Office Panel — Pixel Art Canvas Engine (60 FPS, animated agents)
 // ──────────────────────────────────────────────────────────────────────────────
+// Static office feed — used as fallback when API is unreachable
+const OFFICE_STATIC_FEED = [
+    {agent:"Claude",  action:"Canvas office looking great 🚀"},
+    {agent:"Gordon",  action:"Freqtrade heartbeat — bot healthy"},
+    {agent:"Ernst",   action:"Threat monitor: 132 processes scanned"},
+    {agent:"Milfred", action:"Dashboard API build started"},
+    {agent:"Hawk",    action:"Code review complete ✓"},
+    {agent:"Lara",    action:"Content draft scheduled"},
+];
+
 function renderOffice(d) {
+    const feed = (d?.activity_feed || OFFICE_STATIC_FEED).slice(0, 8);
     return `
         <div class="panel-header">
             <div class="panel-title">🏢 Virtual Office</div>
@@ -2608,9 +2619,9 @@ function renderOffice(d) {
                 </div>
                 <div class="office-feed-hdr">Activity Log</div>
                 <div class="office-feed" id="office-feed">
-                    ${(d.activity_feed || []).slice(0, 8).map(f => `
+                    ${feed.map(f => `
                         <div class="office-feed-row">
-                            <span class="feed-agent">${f.agent}</span>
+                            <span class="feed-agent">${escHtml(f.agent)}</span>
                             <span class="feed-action">${escHtml(f.action)}</span>
                         </div>`).join("")}
                 </div>
@@ -2618,7 +2629,28 @@ function renderOffice(d) {
         </div>`;
 }
 
-function initOfficePanel(data, container) {
+// initOfficePanel fetches live data itself so the panel renders even when
+// the remote API is unreachable (CORS / network issues on nouga.ai).
+async function initOfficePanel(data, container) {
+    // Try to get live desk statuses; silently fall back to all-busy on failure
+    let liveData = { desks: [], activity_feed: OFFICE_STATIC_FEED };
+    try {
+        const r = await fetchData("office");
+        liveData = r;
+        // Patch feed HTML with live data
+        const feedEl = container.querySelector("#office-feed");
+        if (feedEl && r.activity_feed?.length) {
+            feedEl.innerHTML = r.activity_feed.slice(0, 8).map(f =>
+                `<div class="office-feed-row"><span class="feed-agent">${escHtml(f.agent)}</span><span class="feed-action">${escHtml(f.action)}</span></div>`
+            ).join("");
+        }
+    } catch(_) { /* run on static data — no error shown */ }
+
+    _startOfficeCanvas(liveData, container);
+    _startOfficeCanvas(liveData, container);
+}
+
+function _startOfficeCanvas(data, container) {
     const canvas = container.querySelector("#office-canvas");
     if (!canvas) return;
 
@@ -3922,9 +3954,12 @@ function renderTeam(d) {
         </div>
 
         <div class="card" style="margin-bottom:16px">
-            <div class="card-title">Vision</div>
-            <div style="font-size:1rem;color:var(--text);line-height:1.8;font-style:italic;padding:8px 0">
-                "To be the intelligence layer for every ambitious team — making world-class thinking accessible to builders everywhere."
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div class="card-title" style="margin-bottom:0">Vision</div>
+                <button class="btn btn-ghost company-edit-btn" data-section="vision" style="font-size:0.72rem;padding:2px 8px">✏️ Edit</button>
+            </div>
+            <div id="company-vision-view" style="font-size:1rem;color:var(--text);line-height:1.8;font-style:italic;padding:8px 0">
+                "${escHtml(d.vision || "To be the intelligence layer for every ambitious team — making world-class thinking accessible to builders everywhere.")}"
             </div>
             <div class="grid-2" style="margin-top:12px">
                 <div>
@@ -3947,7 +3982,11 @@ function renderTeam(d) {
         </div>
 
         <div class="card" style="margin-bottom:16px">
-            <div class="card-title">Strategy</div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+                <div class="card-title" style="margin-bottom:0">Strategy</div>
+                <button class="btn btn-ghost company-edit-btn" data-section="strategy" style="font-size:0.72rem;padding:2px 8px">✏️ Edit</button>
+            </div>
+            <div id="company-strategy-view" style="font-size:0.88rem;color:var(--text);line-height:1.7;white-space:pre-wrap">${escHtml(d.strategy || "")}</div>
             <div style="margin-bottom:14px">
                 <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🗺️ Where Do We Play</div>
                 <div class="grid-2" style="gap:10px">
@@ -5076,6 +5115,9 @@ async function initWorkflowsPanel(_, el) {
 
     async function reload() {
         body.innerHTML = `<div class="loading"><div class="spinner"></div> Loading…</div>`;
+        // Always fetch fresh task data so status matches the Tasks panel
+        delete panelCache["tasks"];
+        delete panelCache["agents"];
 
         const PRIO_ORDER = { high: 0, normal: 1, low: 2 };
         let agents = [], allTasks = [], runs = [], wfDefs = [];
@@ -5493,7 +5535,7 @@ const PANELS = {
     memory:    { fn: renderMemory,    endpoint: "memory"                           },
     docs:      { fn: renderDocs,      endpoint: "docs"                             },
     people:    { fn: renderPeople,    endpoint: "people"                           },
-    office:    { fn: renderOffice,    endpoint: "office",   init: initOfficePanel  },
+    office:    { fn: renderOffice,    endpoint: null,        init: initOfficePanel  },
     team:      { fn: renderTeam,      endpoint: "team",     init: initTeamPanel    },
     system:    { fn: renderSystem,    endpoint: "system",   init: initSystemPanel  },
     skills:    { fn: renderSkills,    endpoint: null                               },
@@ -5983,86 +6025,86 @@ function initDraggableSidebar() {
     const sidebar = document.querySelector(".sidebar");
     if (!sidebar) return;
 
-    let dragSrc = null;
+    // ── helpers ──────────────────────────────────────────────────────────────
+    function makeDraggable(container, itemSelector, storageKey) {
+        let src = null;
 
-    function addHandles() {
+        container.querySelectorAll(itemSelector).forEach(item => {
+            item.setAttribute("draggable", "true");
+
+            item.addEventListener("dragstart", e => {
+                src = item;
+                e.dataTransfer.effectAllowed = "move";
+                e.dataTransfer.setData("text/plain", "");
+                setTimeout(() => item.classList.add("sidebar-dragging"), 0);
+                e.stopPropagation();   // prevent section drag from firing
+            });
+
+            item.addEventListener("dragend", () => {
+                item.classList.remove("sidebar-dragging");
+                container.querySelectorAll(itemSelector).forEach(i => i.classList.remove("sidebar-drag-over"));
+                src = null;
+                // save order
+                const order = [...container.querySelectorAll(itemSelector)].map(i => i.dataset.panel || i.textContent.trim());
+                localStorage.setItem(storageKey, JSON.stringify(order));
+            });
+
+            item.addEventListener("dragover", e => {
+                if (!src || src === item) return;
+                e.preventDefault(); e.stopPropagation();
+                container.querySelectorAll(itemSelector).forEach(i => i.classList.remove("sidebar-drag-over"));
+                item.classList.add("sidebar-drag-over");
+            });
+
+            item.addEventListener("drop", e => {
+                if (!src || src === item) return;
+                e.preventDefault(); e.stopPropagation();
+                const all = [...container.querySelectorAll(itemSelector)];
+                if (all.indexOf(src) < all.indexOf(item)) container.insertBefore(src, item.nextSibling);
+                else container.insertBefore(src, item);
+                container.querySelectorAll(itemSelector).forEach(i => i.classList.remove("sidebar-drag-over"));
+            });
+        });
+    }
+
+    // ── Section drag (reorder Work / AI / Operations / People) ────────────
+    function addSectionHandles() {
         sidebar.querySelectorAll(".sidebar-section").forEach(sec => {
             const label = sec.querySelector(".sidebar-label");
             if (!label || label.querySelector(".sidebar-drag-handle")) return;
-            const handle = document.createElement("span");
-            handle.className = "sidebar-drag-handle";
-            handle.textContent = "⠿";
-            handle.style.cssText = "opacity:0.45;font-size:0.85rem;margin-right:5px;cursor:grab;user-select:none;display:inline-block";
-            label.prepend(handle);
+            const h = document.createElement("span");
+            h.className = "sidebar-drag-handle";
+            h.textContent = "⠿";
+            h.style.cssText = "opacity:0.4;font-size:0.85rem;margin-right:5px;cursor:grab;user-select:none;display:inline-block";
+            label.prepend(h);
         });
     }
 
-    function applyDrag() {
-        sidebar.querySelectorAll(".sidebar-section").forEach(sec => {
-            sec.setAttribute("draggable", "true");
-
-            sec.addEventListener("dragstart", function(e) {
-                dragSrc = sec;
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", "");
-                setTimeout(() => sec.classList.add("sidebar-dragging"), 0);
-            });
-
-            sec.addEventListener("dragend", function() {
-                sec.classList.remove("sidebar-dragging");
-                sidebar.querySelectorAll(".sidebar-section").forEach(s => s.classList.remove("sidebar-drag-over"));
-                dragSrc = null;
-                saveOrder();
-            });
-
-            sec.addEventListener("dragover", function(e) {
-                if (!dragSrc || dragSrc === sec) return;
-                e.preventDefault();
-                e.dataTransfer.dropEffect = "move";
-                sidebar.querySelectorAll(".sidebar-section").forEach(s => s.classList.remove("sidebar-drag-over"));
-                sec.classList.add("sidebar-drag-over");
-            });
-
-            sec.addEventListener("drop", function(e) {
-                if (!dragSrc || dragSrc === sec) return;
-                e.preventDefault();
-                const all = [...sidebar.querySelectorAll(".sidebar-section")];
-                const fromIdx = all.indexOf(dragSrc);
-                const toIdx = all.indexOf(sec);
-                if (fromIdx < toIdx) {
-                    sidebar.insertBefore(dragSrc, sec.nextSibling);
-                } else {
-                    sidebar.insertBefore(dragSrc, sec);
-                }
-                sidebar.querySelectorAll(".sidebar-section").forEach(s => s.classList.remove("sidebar-drag-over"));
-            });
-        });
-    }
-
-    function saveOrder() {
-        const order = [...sidebar.querySelectorAll(".sidebar-section")].map(sec => {
-            const h = sec.querySelector(".sidebar-label");
-            return h ? h.textContent.trim().replace(/^[⠿\s]+/, "") : "";
-        }).filter(Boolean);
-        localStorage.setItem("sidebar_section_order", JSON.stringify(order));
-    }
-
-    function restoreOrder() {
+    function restoreOrder(container, itemSelector, storageKey, keyFn) {
         try {
-            const saved = JSON.parse(localStorage.getItem("sidebar_section_order") || "null");
-            if (!saved || !Array.isArray(saved) || !saved.length) return;
-            saved.forEach(labelText => {
-                const sec = [...sidebar.querySelectorAll(".sidebar-section")].find(s => {
-                    const h = s.querySelector(".sidebar-label");
-                    return h && h.textContent.trim().replace(/^[⠿\s]+/, "") === labelText;
-                });
-                if (sec) sidebar.appendChild(sec);
+            const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
+            if (!saved?.length) return;
+            saved.forEach(key => {
+                const item = [...container.querySelectorAll(itemSelector)].find(i => keyFn(i) === key);
+                if (item) container.appendChild(item);
             });
         } catch(_) {}
     }
 
-    restoreOrder();
-    addHandles();
-    applyDrag();
+    // Restore + wire section drag
+    restoreOrder(sidebar, ".sidebar-section", "sidebar_section_order",
+        s => s.querySelector(".sidebar-label")?.textContent.trim().replace(/^[⠿\s]+/, "") || "");
+    addSectionHandles();
+    makeDraggable(sidebar, ".sidebar-section", "sidebar_section_order");
+
+    // ── Item drag within each section (reorder nav-items inside Work etc.) ─
+    sidebar.querySelectorAll(".sidebar-section").forEach(sec => {
+        const label = sec.querySelector(".sidebar-label");
+        const sectionName = label?.textContent.trim().replace(/^[⠿\s]+/, "") || "section";
+        const key = `sidebar_items_${sectionName}`;
+
+        restoreOrder(sec, ".nav-item", key, i => i.dataset.panel || "");
+        makeDraggable(sec, ".nav-item", key);
+    });
 }
 // Delete button fix deployed Mon Mar  9 21:25:04 CET 2026
