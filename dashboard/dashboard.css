@@ -1704,14 +1704,41 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     border-bottom: 2px solid var(--border2);
     white-space: nowrap;
     overflow: hidden;
+    position: relative;
+    user-select: none;
 }
 
-.task-th-name     { width: 26%; }
-.task-th-status   { width: 12%; }
-.task-th-assignee { width: 13%; }
-.task-th-date     { width: 8%; min-width: 90px; }
-.task-th-timeline { width: 30%; padding-top: 4px; padding-bottom: 4px; vertical-align: bottom; }
-.task-th-actions  { width: 10%; text-align: right; }
+/* Column resize handle */
+.col-rh {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 6px;
+    height: 100%;
+    cursor: col-resize;
+    z-index: 5;
+}
+.col-rh::after {
+    content: "";
+    position: absolute;
+    top: 20%;
+    right: 1px;
+    width: 2px;
+    height: 60%;
+    background: var(--border2);
+    border-radius: 1px;
+    transition: background 0.15s;
+}
+.col-rh:hover::after {
+    background: var(--blue, #3b82f6);
+}
+
+.task-th-name     { width: 24%; }
+.task-th-status   { width: 11%; }
+.task-th-assignee { width: 11%; }
+.task-th-dates    { width: 16%; min-width: 160px; }
+.task-th-timeline { width: 29%; padding-top: 4px; padding-bottom: 4px; vertical-align: bottom; }
+.task-th-actions  { width: 9%; text-align: right; }
 
 /* Task rows */
 .task-row {
@@ -1753,6 +1780,30 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     vertical-align: middle;
 }
 
+.task-cell-dates {
+    padding: 4px 8px;
+    vertical-align: middle;
+}
+
+.task-dates-wrap {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+}
+
+.task-dates-arrow {
+    font-size: 0.65rem;
+    color: var(--text3);
+    flex-shrink: 0;
+}
+
+.task-date-start,
+.task-date-end {
+    width: 68px;
+    min-width: 0;
+    font-size: 0.72rem;
+}
+
 /* Mini timeline bar */
 .task-tl-wrap {
     position: relative;
@@ -1786,6 +1837,34 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
 /* No-date wrap: shows today hairline even without a bar */
 .task-tl-nodate-wrap {
     background: repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(255,255,255,0.05) 3px, rgba(255,255,255,0.05) 6px);
+    cursor: default;
+}
+
+.task-tl-nodate-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    padding-left: 10px;
+    font-size: 0.67rem;
+    color: var(--yellow, #f5a623);
+    opacity: 0.7;
+    pointer-events: none;
+    white-space: nowrap;
+    overflow: hidden;
+}
+
+.task-tl-dur-label {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.62rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.75);
+    pointer-events: none;
+    overflow: hidden;
 }
 
 /* Today hairline inside mini timeline bars */
@@ -1954,8 +2033,8 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     border: 1px solid var(--border);
     border-radius: 5px;
     color: var(--text);
-    font-size: 0.78rem;
-    padding: 4px 6px;
+    font-size: 0.75rem;
+    padding: 3px 4px;
     width: 100%;
     color-scheme: dark;
 }
@@ -2474,3 +2553,80 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     box-shadow: 0 0 6px rgba(59,130,246,0.6);
     flex-shrink: 0;
 }
+
+/* ── Agent Hub ───────────────────────────────────────────────────────────────*/
+.ah-section-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--text3);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+}
+.ah-agent-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+.ah-agent-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.15s;
+}
+.ah-agent-card:hover { border-color: var(--border2); }
+.ah-card-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    cursor: pointer;
+}
+.ah-agent-emoji { font-size: 1.4rem; flex-shrink: 0; }
+.ah-agent-name  { font-weight: 700; font-size: 0.9rem; }
+.ah-agent-role  { font-size: 0.72rem; color: var(--text3); }
+.ah-status-dot  {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    box-shadow: 0 0 5px currentColor;
+}
+.ah-queue-badge {
+    background: var(--blue);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 999px;
+    flex-shrink: 0;
+}
+.ah-expand-btn {
+    background: none;
+    border: none;
+    color: var(--text3);
+    font-size: 0.65rem;
+    cursor: pointer;
+    padding: 2px 4px;
+    flex-shrink: 0;
+}
+.ah-current-task {
+    padding: 4px 14px 8px;
+    font-size: 0.78rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(59,130,246,0.06);
+    border-top: 1px solid rgba(59,130,246,0.15);
+}
+.ah-queue-wrap {
+    display: none;
+    border-top: 1px solid var(--border);
+}
+.ah-queue-wrap.open { display: block; }
+.ah-queue-row:hover { background: rgba(255,255,255,0.03); }

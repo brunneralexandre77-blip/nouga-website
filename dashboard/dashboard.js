@@ -2,9 +2,28 @@
    Nouga Mission Control — Dashboard JS  (Phase 2)
 ============================================================ */
 
-const API_HOST = "https://api.nouga.ai";
+// Allow local-dev override: in browser console run:
+//   localStorage.setItem('NOUGA_API_HOST', 'http://localhost:5001')
+// then reload. Clear with: localStorage.removeItem('NOUGA_API_HOST')
+const API_HOST = localStorage.getItem('NOUGA_API_HOST') || "https://api.nouga.ai";
 const API    = `${API_HOST}/api`;
 const WS_URL = API_HOST;
+
+// Warn early if the page origin won't satisfy the production CORS policy
+(function _checkOrigin() {
+    const allowedOrigin = "https://nouga.ai";
+    const currentOrigin = window.location.origin;
+    if (currentOrigin !== allowedOrigin && !localStorage.getItem('NOUGA_API_HOST')) {
+        console.warn(
+            `[CORS WARNING] Dashboard is loaded from "${currentOrigin}" but the API only allows ` +
+            `"${allowedOrigin}". All fetch calls will likely fail with "Failed to fetch".\n` +
+            `To test locally, point to a local API server:\n` +
+            `  localStorage.setItem('NOUGA_API_HOST', 'http://localhost:5001'); location.reload();`
+        );
+    } else {
+        console.log(`[init] API_HOST=${API_HOST}  page origin=${currentOrigin}`);
+    }
+})();
 
 async function checkAuth() {
     try {
@@ -219,9 +238,19 @@ async function fetchData(endpoint, { retry = 1 } = {}) {
         let msg;
         if (netErr.name === "TimeoutError") {
             msg = `Timeout fetching /${endpoint} (>8s)`;
-        } else if (netErr instanceof TypeError && netErr.message.toLowerCase().includes("failed to fetch")) {
-            // "Failed to fetch" can mean: CORS preflight rejected, DNS failure, server down, or mixed-content block
-            msg = `Network/CORS error fetching /${endpoint}: ${netErr.message}`;
+        } else if (netErr instanceof TypeError && (
+            netErr.message.toLowerCase().includes("failed to fetch") ||   // Chrome
+            netErr.message.toLowerCase().includes("load failed") ||        // Safari
+            netErr.message.toLowerCase().includes("networkerror") ||       // Firefox
+            netErr.message.toLowerCase().includes("network request failed")
+        )) {
+            // Network-level failure: CORS preflight rejected, DNS failure, server down, or mixed-content block
+            const pageOrigin = window.location.origin;
+            const apiOrigin  = new URL(API_HOST).origin;
+            const corsHint   = pageOrigin !== apiOrigin
+                ? ` (LIKELY CAUSE: page is at "${pageOrigin}" but API only allows "https://nouga.ai" — set localStorage.NOUGA_API_HOST to use a local server)`
+                : "";
+            msg = `Network/CORS error fetching /${endpoint}: ${netErr.message}${corsHint}`;
             console.error(`[fetchData] DIAGNOSIS — possible causes for "Failed to fetch":
   1. CORS: Does ${API_HOST} return Access-Control-Allow-Origin for this origin?
   2. Auth: Is the session cookie present & sent? (credentials:"include" is set)
@@ -1869,15 +1898,23 @@ function _miniTimelineBarHtml(task) {
     const timelineStart = new Date(today.getTime() - WEEKS_BEFORE * msPerWeek);
     const totalMs       = WEEKS_TOTAL * msPerWeek;
 
-    const rawDate = task.target_date || task.due_date;
+    const rawEnd   = task.target_date || task.due_date;
+    const rawStart = task.start_date;
     const todayPct = (WEEKS_BEFORE / WEEKS_TOTAL * 100).toFixed(1);
     const todayLine = `<div class="task-tl-today" style="left:${todayPct}%"></div>`;
-    if (!rawDate) return `<div class="task-tl-wrap task-tl-nodate-wrap" title="No target date set">${todayLine}</div>`;
+    if (!rawEnd) return `<div class="task-tl-wrap task-tl-nodate-wrap" title="No end date set — add one to see duration bar">
+        ${todayLine}
+        <span class="task-tl-nodate-label">set end date →</span>
+    </div>`;
 
-    const endDate   = new Date(rawDate);
-    const status    = task.status || "todo";
-    let   startDate;
-    if (status === "in_progress") {
+    const endDate = new Date(rawEnd);
+    const status  = task.status || "todo";
+    let startDate;
+
+    if (rawStart) {
+        // Use actual start date if set
+        startDate = new Date(rawStart);
+    } else if (status === "in_progress") {
         startDate = new Date(today);
         startDate.setDate(startDate.getDate() - 7);
     } else if (status === "done") {
@@ -1897,18 +1934,21 @@ function _miniTimelineBarHtml(task) {
         return `<div class="task-tl-wrap task-tl-nodate-wrap" title="${escHtml(dueStr)} — out of view">${todayLine}</div>`;
     }
 
-    const isOverdue = rawDate && endDate < today && status !== "done";
+    const isOverdue = rawEnd && endDate < today && status !== "done";
     const barClass  = isOverdue                  ? "task-tl-bar-overdue"
                     : status === "done"          ? "task-tl-bar-done"
                     : status === "in_progress"   ? "task-tl-bar-inprogress"
                     : "task-tl-bar-todo";
 
-    const dueLabel = endDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    const tooltip  = `${dueLabel}${isOverdue ? " ⚠ Overdue" : ""}`;
+    const startLabel = rawStart ? new Date(rawStart).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : null;
+    const dueLabel   = endDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const tooltip    = `${startLabel ? startLabel + " → " : ""}${dueLabel}${isOverdue ? " ⚠ Overdue" : ""}`;
+    const durDays    = rawStart ? Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)) : null;
+    const durLabel   = durDays !== null && clampedW > 10 ? `<span class="task-tl-dur-label">${durDays}d</span>` : "";
 
     return `<div class="task-tl-wrap" title="${escHtml(tooltip)}">
         ${todayLine}
-        <div class="task-tl-bar ${barClass}" style="left:${clampedL.toFixed(1)}%;width:${clampedW.toFixed(1)}%"></div>
+        <div class="task-tl-bar ${barClass}" style="left:${clampedL.toFixed(1)}%;width:${clampedW.toFixed(1)}%">${durLabel}</div>
     </div>`;
 }
 
@@ -1945,6 +1985,9 @@ async function renderProjectDetail(project) {
 
     $("task-back").onclick = () => { _taskViewProject = null; loadPanel("projects"); };
 
+    // Set before fetch so auto-refresh guards in loadPanel fire immediately
+    _taskViewProject = project;
+
     try {
         const tasksData = await fetchData("tasks");
         if (_detailRenderToken !== renderToken) return;
@@ -1965,11 +2008,11 @@ async function renderProjectDetail(project) {
                 || (proj && (proj.includes(projKey) || projKey.includes(proj)));
         });
 
-        _taskViewProject = project;
-        _taskViewTasks   = tasks;
+        _taskViewTasks = tasks;
         renderTaskList(tasks, project);
     } catch(e) {
         console.error(`[TaskView] fetchData failed:`, e);
+        _taskViewProject = null; // reset so the error state doesn't block refresh
         const viewBody = $("task-view-body");
         if (viewBody) viewBody.innerHTML = errorBox(`Failed to load tasks: ${e.message}`);
     }
@@ -2000,6 +2043,7 @@ function renderTaskList(tasks, project) {
             `<option value="${a}"${(task.assignee || task.assigned_to || "") === a ? " selected" : ""}>${a ? escHtml(a) : "—"}</option>`
         ).join("");
         const targetDate  = task.target_date || task.due_date || "";
+        const startDate   = task.start_date || "";
         const hasChildren = !!(childMap[String(task.id)] && childMap[String(task.id)].length);
         const isCollapsed = _taskViewCollapsed.has(String(task.id));
 
@@ -2028,8 +2072,12 @@ function renderTaskList(tasks, project) {
                     ${assigneeOpts}
                 </select>
             </td>
-            <td class="task-cell">
-                <input type="date" class="task-date-input" data-task-id="${task.id}" data-field="target_date" value="${escHtml(targetDate)}" />
+            <td class="task-cell task-cell-dates">
+                <div class="task-dates-wrap">
+                    <input type="date" class="task-date-input task-date-start" data-task-id="${task.id}" data-field="start_date" value="${escHtml(startDate)}" title="Start date" />
+                    <span class="task-dates-arrow">→</span>
+                    <input type="date" class="task-date-input task-date-end" data-task-id="${task.id}" data-field="target_date" value="${escHtml(targetDate)}" title="Due date" />
+                </div>
             </td>
             <td class="task-cell task-cell-timeline">
                 ${_miniTimelineBarHtml(task)}
@@ -2067,7 +2115,7 @@ function renderTaskList(tasks, project) {
                     <th class="task-th task-th-name">Task Name</th>
                     <th class="task-th task-th-status">Status</th>
                     <th class="task-th task-th-assignee">Assigned To</th>
-                    <th class="task-th task-th-date">Date</th>
+                    <th class="task-th task-th-dates">Dates</th>
                     <th class="task-th task-th-timeline">${window._tlThHtml}</th>
                     <th class="task-th task-th-actions">Actions</th>
                 </tr>
@@ -2082,6 +2130,8 @@ function renderTaskList(tasks, project) {
 
     initTaskListInteractions(tasks, project);
     initTaskDragDrop(tasks, project);
+    const tbl = viewBody.querySelector(".task-table");
+    if (tbl) _initColResize(tbl);
 }
 
 function initTaskListInteractions(tasks, project) {
@@ -2208,6 +2258,69 @@ function initTaskListInteractions(tasks, project) {
 
     $("task-add-new-btn")?.addEventListener("click", _addNewTask);
     $("task-header-add-btn")?.addEventListener("click", _addNewTask);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Column resize for task table
+// ──────────────────────────────────────────────────────────────────────────────
+const COL_WIDTHS_KEY = "nouga_task_col_widths";
+const COL_MIN_WIDTHS = {
+    "task-th-name":     150,
+    "task-th-status":    80,
+    "task-th-assignee":  90,
+    "task-th-dates":    120,
+    "task-th-timeline": 180,
+    "task-th-actions":   70,
+};
+
+function _initColResize(tableEl) {
+    const ths = Array.from(tableEl.querySelectorAll("th.task-th"));
+
+    // Apply saved widths from localStorage
+    let saved = {};
+    try { saved = JSON.parse(localStorage.getItem(COL_WIDTHS_KEY) || "{}"); } catch(e) {}
+    ths.forEach(th => {
+        const key = [...th.classList].find(c => c.startsWith("task-th-") && c !== "task-th");
+        if (key && saved[key]) th.style.width = saved[key];
+    });
+
+    // Add resize handle to every th
+    ths.forEach(th => {
+        if (th.querySelector(".col-rh")) return; // avoid double-init
+        const handle = document.createElement("div");
+        handle.className = "col-rh";
+        th.appendChild(handle);
+
+        handle.addEventListener("mousedown", e => {
+            e.preventDefault();
+            const startX = e.clientX;
+            const startW = th.getBoundingClientRect().width;
+            const key    = [...th.classList].find(c => c.startsWith("task-th-") && c !== "task-th");
+            const minW   = COL_MIN_WIDTHS[key] || 60;
+            document.body.style.cursor = "col-resize";
+            tableEl.style.userSelect = "none";
+
+            const onMove = mv => {
+                const w = Math.max(minW, startW + mv.clientX - startX);
+                th.style.width = w + "px";
+            };
+            const onUp = () => {
+                document.removeEventListener("mousemove", onMove);
+                document.removeEventListener("mouseup", onUp);
+                document.body.style.cursor = "";
+                tableEl.style.userSelect = "";
+                // Persist
+                const widths = {};
+                ths.forEach(t => {
+                    const k = [...t.classList].find(c => c.startsWith("task-th-") && c !== "task-th");
+                    if (k && t.style.width) widths[k] = t.style.width;
+                });
+                localStorage.setItem(COL_WIDTHS_KEY, JSON.stringify(widths));
+            };
+            document.addEventListener("mousemove", onMove);
+            document.addEventListener("mouseup", onUp);
+        });
+    });
 }
 
 function initTaskDragDrop(tasks, project) {
@@ -4641,11 +4754,14 @@ function _wfCurrentStep(steps) {
 function renderWorkflows() {
     return `
         <div class="panel-header">
-            <div class="panel-title">🐜 Workflows</div>
-            <div class="panel-subtitle">Antfarm · AI-powered dev automation</div>
+            <div>
+                <div class="panel-title">👥 Agent Management Overview</div>
+                <div class="panel-subtitle">Agent status · task queues · workflow runs</div>
+            </div>
+            <button class="btn btn-ghost" id="agent-hub-refresh" style="font-size:0.8rem">↻ Refresh</button>
         </div>
-        <div id="wf-body" style="padding:16px;display:flex;flex-direction:column;gap:20px">
-            <div class="loading"><div class="spinner"></div> Loading antfarm…</div>
+        <div id="agent-hub-body" style="padding:16px;display:flex;flex-direction:column;gap:24px">
+            <div class="loading"><div class="spinner"></div> Loading agents…</div>
         </div>`;
 }
 
@@ -4698,122 +4814,239 @@ function _wfRunModal(workflows) {
     });
 }
 
+const AGENT_STATUS_CFG = {
+    active:  { dot: "#22c55e", label: "Active"   },
+    idle:    { dot: "#f5a623", label: "Idle"      },
+    offline: { dot: "#ef4444", label: "Offline"   },
+    paused:  { dot: "#6b7280", label: "Paused"    },
+};
+const PRIORITY_CFG = {
+    high:   { color: "#ef4444", label: "High",   dot: "🔴" },
+    normal: { color: "#f5a623", label: "Med",    dot: "🟡" },
+    low:    { color: "#22c55e", label: "Low",    dot: "🟢" },
+};
+
+let _agentHubExpanded = new Set(); // agent IDs whose queues are expanded
+
 async function initWorkflowsPanel(_, el) {
-    const body = el.querySelector("#wf-body");
+    const body = el.querySelector("#agent-hub-body");
 
     async function reload() {
-        body.innerHTML = `<div class="loading"><div class="spinner"></div> Loading antfarm…</div>`;
-        let runs = [], wfDefs = [];
+        body.innerHTML = `<div class="loading"><div class="spinner"></div> Loading…</div>`;
+
+        let agents = [], allTasks = [], runs = [], wfDefs = [];
+        try {
+            const [agentsRes, tasksRes] = await Promise.all([
+                fetchData("agents"),
+                fetchData("tasks"),
+            ]);
+            agents   = agentsRes.agents || [];
+            allTasks = [...(tasksRes.todo||[]), ...(tasksRes.in_progress||[]), ...(tasksRes.done||[])];
+        } catch(e) {
+            body.innerHTML = `<div style="color:var(--red,#f87171);padding:16px">Failed to load agents: ${escHtml(e.message)}</div>`;
+            return;
+        }
         try {
             const [runsRes, wfRes] = await Promise.all([
                 fetch(`${ANTFARM_API}/runs`),
                 fetch(`${ANTFARM_API}/workflows`),
             ]);
-            const runsJson = await runsRes.json();
-            const wfJson   = await wfRes.json();
-            if (runsJson.success) runs   = runsJson.data;
-            if (wfJson.success)   wfDefs = wfJson.data;
-        } catch(e) {
-            body.innerHTML = `<div style="color:var(--red,#f87171);padding:16px">
-                Failed to connect to antfarm — is it running? (<code>antfarm dashboard start</code>)<br>
-                <small style="color:var(--text3)">${escHtml(e.message)}</small>
-            </div>`;
-            return;
-        }
+            const rj = await runsRes.json(); const wj = await wfRes.json();
+            if (rj.success) runs   = rj.data;
+            if (wj.success) wfDefs = wj.data;
+        } catch(e) { /* antfarm offline — show empty section */ }
 
-        // Stats row
-        const statCounts = { running: 0, pending: 0, done: 0, failed: 0 };
-        runs.forEach(r => { if (r.status in statCounts) statCounts[r.status]++; });
+        // ── Agent grid ────────────────────────────────────────────────────────
+        const agentCardsHtml = agents.map(a => {
+            const statusCfg  = AGENT_STATUS_CFG[a.status] || AGENT_STATUS_CFG.idle;
+            const agentTasks = allTasks.filter(t => (t.assignee||"").toLowerCase() === a.name.toLowerCase());
+            const current    = agentTasks.find(t => t.status === "in_progress");
+            const pending    = agentTasks.filter(t => t.status === "todo");
+            const queueCount = pending.length;
+            const isExpanded = _agentHubExpanded.has(a.id);
 
-        const statsHtml = Object.entries(statCounts).map(([k, v]) => {
-            const m = { running: ["#22c55e", "Running"], pending: ["#f5a623", "Pending"], done: ["#60a5fa", "Done"], failed: ["#f87171", "Failed"] }[k];
-            return `<div style="text-align:center;padding:12px 20px;background:var(--bg2,#1a1a2e);border:1px solid ${m[0]}33;border-radius:8px;min-width:90px">
-                <div style="font-size:1.6rem;font-weight:700;color:${m[0]}">${v}</div>
-                <div style="font-size:0.72rem;color:var(--text3,#888);text-transform:uppercase;letter-spacing:0.05em">${m[1]}</div>
+            // Queue rows
+            const queueRowsHtml = agentTasks.map(t => {
+                const pc = PRIORITY_CFG[t.priority] || PRIORITY_CFG.normal;
+                const statusLabel = t.status === "in_progress" ? "Active" : t.status === "done" ? "Done" : "Pending";
+                const statusColor = t.status === "in_progress" ? "#60a5fa" : t.status === "done" ? "#22c55e" : "#888";
+                return `<tr class="ah-queue-row">
+                    <td style="padding:5px 8px">
+                        <span title="${escHtml(pc.label)}" style="cursor:pointer;font-size:0.85rem" class="ah-priority-toggle" data-task-id="${t.id}" data-priority="${t.priority}">${pc.dot}</span>
+                    </td>
+                    <td style="padding:5px 8px;font-size:0.82rem;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(t.title)}">${escHtml(t.title)}</td>
+                    <td style="padding:5px 8px"><span style="font-size:0.72rem;color:${statusColor}">${statusLabel}</span></td>
+                    <td style="padding:5px 8px;text-align:right;white-space:nowrap">
+                        <button class="btn btn-ghost ah-reassign-btn" data-task-id="${t.id}" style="font-size:0.7rem;padding:2px 6px">Move</button>
+                        <button class="btn btn-ghost ah-delete-btn" data-task-id="${t.id}" style="font-size:0.7rem;padding:2px 6px;color:var(--red,#f87171)">✕</button>
+                    </td>
+                </tr>`;
+            }).join("");
+
+            return `<div class="ah-agent-card" data-agent-id="${escHtml(a.id)}">
+                <div class="ah-card-header">
+                    <span class="ah-agent-emoji">${escHtml(a.emoji||"🤖")}</span>
+                    <div class="ah-agent-info">
+                        <div class="ah-agent-name">${escHtml(a.name)}</div>
+                        <div class="ah-agent-role">${escHtml(a.role)}</div>
+                    </div>
+                    <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+                        <span class="ah-status-dot" style="background:${statusCfg.dot}" title="${statusCfg.label}"></span>
+                        <span style="font-size:0.72rem;color:var(--text3)">${statusCfg.label}</span>
+                        ${queueCount > 0 ? `<span class="ah-queue-badge">${queueCount}</span>` : ""}
+                        <button class="btn btn-ghost ah-assign-btn" data-agent-id="${escHtml(a.id)}" data-agent-name="${escHtml(a.name)}" style="font-size:0.72rem;padding:2px 8px">+ Task</button>
+                        <button class="ah-expand-btn" data-agent-id="${escHtml(a.id)}">${isExpanded ? "▲" : "▼"}</button>
+                    </div>
+                </div>
+                ${current ? `<div class="ah-current-task"><span style="color:var(--blue,#60a5fa);font-size:0.72rem;font-weight:600">▶ ACTIVE</span> <span style="font-size:0.8rem">${escHtml(current.title)}</span></div>` : ""}
+                <div class="ah-queue-wrap${isExpanded ? " open" : ""}">
+                    ${agentTasks.length === 0
+                        ? `<div style="padding:10px 12px;font-size:0.78rem;color:var(--text3)">No tasks assigned</div>`
+                        : `<table style="width:100%;border-collapse:collapse"><tbody>${queueRowsHtml}</tbody></table>`}
+                </div>
             </div>`;
         }).join("");
 
-        // Quick-start buttons
-        const qsHtml = `
-            <div style="display:flex;gap:8px;flex-wrap:wrap">
-                <button class="btn btn-ghost wf-quick" data-wf="feature-dev" style="border-color:#60a5fa44;color:#60a5fa">✨ New Feature</button>
-                <button class="btn btn-ghost wf-quick" data-wf="bug-fix" style="border-color:#f8717144;color:#f87171">🐛 Fix Bug</button>
-                <button class="btn btn-ghost wf-quick" data-wf="security-audit" style="border-color:#fb923c44;color:#fb923c">🔒 Security Audit</button>
-                <button class="btn btn-primary" id="wf-new-btn" style="margin-left:auto">+ New Workflow</button>
-            </div>`;
-
-        // Runs table
+        // ── Antfarm section ───────────────────────────────────────────────────
         const runsHtml = runs.length === 0
-            ? `<div style="text-align:center;padding:40px;color:var(--text3,#888)">No workflow runs yet.<br><small>Use a quick-start button above to kick one off.</small></div>`
-            : `<table class="table" style="width:100%">
-                <thead><tr>
-                    <th>Workflow</th><th>Task</th><th>Status</th><th>Progress</th><th>Current Step</th><th>Agents</th><th>Started</th><th>Actions</th>
-                </tr></thead>
-                <tbody>${runs.map(r => {
-                    const meta  = WF_META[r.workflow_id] || { emoji: "⚙️", label: r.workflow_id, color: "#888" };
-                    const prog  = _wfProgress(r.steps);
-                    const task  = (r.task || "").replace(/\/.+\s+/, "…").substring(0, 60);
-                    const since = r.created_at ? new Date(r.created_at).toLocaleDateString() : "—";
-                    const step  = _wfCurrentStep(r.steps);
-                    const agts  = _wfAgents(r.steps);
+            ? `<div style="padding:16px;font-size:0.82rem;color:var(--text3)">No workflow runs yet. Use quick-start to kick one off.</div>`
+            : `<table class="table" style="width:100%"><thead><tr>
+                <th>Workflow</th><th>Task</th><th>Status</th><th>Progress</th><th>Step</th><th>Started</th><th></th>
+               </tr></thead><tbody>${runs.map(r => {
+                    const meta = WF_META[r.workflow_id] || { emoji: "⚙️", label: r.workflow_id, color: "#888" };
+                    const prog = _wfProgress(r.steps);
+                    const task = (r.task||"").replace(/\/.+\s+/, "…").substring(0, 50);
                     return `<tr>
                         <td><span style="color:${meta.color};font-weight:600">${meta.emoji} ${meta.label}</span></td>
-                        <td style="max-width:200px;font-size:0.8rem;color:var(--text2,#aaa);overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escHtml(r.task || "")}">${escHtml(task)}</td>
+                        <td style="font-size:0.78rem;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(task)}</td>
                         <td>${_wfStatusBadge(r.status)}</td>
-                        <td style="min-width:120px">${prog.bar}</td>
-                        <td style="font-size:0.78rem;color:var(--text3,#888)">${escHtml(step)}</td>
-                        <td style="font-size:0.78rem;color:var(--text3,#888)">${escHtml(agts)}</td>
-                        <td style="font-size:0.78rem;color:var(--text3,#888)">${since}</td>
-                        <td><button class="btn btn-ghost wf-view-btn" data-run-id="${escHtml(r.id)}" style="font-size:0.75rem;padding:3px 8px">View</button></td>
+                        <td style="min-width:100px">${prog.bar}</td>
+                        <td style="font-size:0.75rem;color:var(--text3)">${escHtml(_wfCurrentStep(r.steps))}</td>
+                        <td style="font-size:0.75rem;color:var(--text3)">${r.created_at ? new Date(r.created_at).toLocaleDateString() : "—"}</td>
+                        <td><button class="btn btn-ghost wf-view-btn" data-run-id="${escHtml(r.id)}" style="font-size:0.72rem;padding:2px 7px">View</button></td>
                     </tr>`;
-                }).join("")}</tbody>
-            </table>`;
+               }).join("")}</tbody></table>`;
 
         body.innerHTML = `
-            <div style="display:flex;gap:12px;flex-wrap:wrap">${statsHtml}</div>
-            ${qsHtml}
             <div>
-                <div style="font-size:0.8rem;color:var(--text3,#888);margin-bottom:8px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase">Recent Runs</div>
+                <div class="ah-section-hdr">
+                    <span>Agents</span>
+                    <div style="display:flex;gap:6px">
+                        <button class="btn btn-ghost" id="ah-pause-all" style="font-size:0.72rem;padding:2px 8px">⏸ Pause All</button>
+                    </div>
+                </div>
+                <div class="ah-agent-grid">${agentCardsHtml}</div>
+            </div>
+            <div>
+                <div class="ah-section-hdr">
+                    <span>🐜 Antfarm Workflow Runs</span>
+                    <div style="display:flex;gap:6px">
+                        <button class="btn btn-ghost wf-quick" data-wf="feature-dev" style="font-size:0.72rem;padding:2px 8px;border-color:#60a5fa44;color:#60a5fa">✨ Feature</button>
+                        <button class="btn btn-ghost wf-quick" data-wf="bug-fix"     style="font-size:0.72rem;padding:2px 8px;border-color:#f8717144;color:#f87171">🐛 Bug Fix</button>
+                        <button class="btn btn-ghost wf-quick" data-wf="security-audit" style="font-size:0.72rem;padding:2px 8px;border-color:#fb923c44;color:#fb923c">🔒 Audit</button>
+                        <button class="btn btn-primary" id="wf-new-btn" style="font-size:0.72rem;padding:2px 10px">+ New</button>
+                    </div>
+                </div>
                 <div style="overflow-x:auto">${runsHtml}</div>
             </div>`;
 
-        // Wire buttons
+        // ── Event wiring ──────────────────────────────────────────────────────
+
+        // Expand/collapse agent queue
+        el.querySelectorAll(".ah-expand-btn").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const id = btn.dataset.agentId;
+                if (_agentHubExpanded.has(id)) _agentHubExpanded.delete(id);
+                else _agentHubExpanded.add(id);
+                reload();
+            });
+        });
+
+        // Entire card header click also toggles
+        el.querySelectorAll(".ah-card-header").forEach(hdr => {
+            hdr.addEventListener("click", e => {
+                if (e.target.closest("button")) return;
+                const id = hdr.closest(".ah-agent-card")?.dataset.agentId;
+                if (!id) return;
+                if (_agentHubExpanded.has(id)) _agentHubExpanded.delete(id);
+                else _agentHubExpanded.add(id);
+                reload();
+            });
+        });
+
+        // Priority cycle
+        el.querySelectorAll(".ah-priority-toggle").forEach(span => {
+            span.addEventListener("click", async () => {
+                const cycle = ["high", "normal", "low"];
+                const cur   = span.dataset.priority || "normal";
+                const next  = cycle[(cycle.indexOf(cur) + 1) % cycle.length];
+                try {
+                    await apiPut(`tasks/${span.dataset.taskId}`, { priority: next });
+                    reload();
+                } catch(e) { showNotif("Failed to update priority", "red"); }
+            });
+        });
+
+        // Reassign task (move to another agent)
+        el.querySelectorAll(".ah-reassign-btn").forEach(btn => {
+            btn.addEventListener("click", async () => {
+                const agent = prompt("Reassign to (name):", "");
+                if (!agent) return;
+                try {
+                    await apiPut(`tasks/${btn.dataset.taskId}`, { assignee: agent });
+                    showNotif(`Task reassigned to ${agent}`, "green");
+                    reload();
+                } catch(e) { showNotif("Failed to reassign", "red"); }
+            });
+        });
+
+        // Delete task from queue
+        el.querySelectorAll(".ah-delete-btn").forEach(btn => {
+            btn.addEventListener("click", async () => {
+                if (!confirm("Delete this task?")) return;
+                try {
+                    await apiDelete(`tasks/${btn.dataset.taskId}`);
+                    reload();
+                } catch(e) { showNotif("Failed to delete task", "red"); }
+            });
+        });
+
+        // + Task button → assign new task to agent
+        el.querySelectorAll(".ah-assign-btn").forEach(btn => {
+            btn.addEventListener("click", async () => {
+                const agentName = btn.dataset.agentName;
+                const title = prompt(`New task for ${agentName}:`, "");
+                if (!title?.trim()) return;
+                try {
+                    await apiPost("tasks", { title: title.trim(), assignee: agentName, status: "todo" });
+                    showNotif(`Task added for ${agentName}`, "green");
+                    reload();
+                } catch(e) { showNotif("Failed to add task", "red"); }
+            });
+        });
+
+        // Antfarm: start workflow
         async function startWorkflow(preselect) {
             const defs = [...wfDefs];
             if (preselect) defs._preselect = preselect;
             const result = await _wfRunModal(defs);
             if (!result) return;
             try {
-                const r = await fetch(`${ANTFARM_API}/start`, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify(result),
-                });
+                const r = await fetch(`${ANTFARM_API}/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result) });
                 const j = await r.json();
-                if (!j.success) throw new Error(j.error || "Failed to start");
+                if (!j.success) throw new Error(j.error || "Failed");
                 showNotif("Workflow started!", "green");
                 setTimeout(reload, 1500);
-            } catch(e) {
-                showNotif("Failed to start workflow: " + e.message, "red");
-            }
+            } catch(e) { showNotif("Failed: " + e.message, "red"); }
         }
-
-        el.querySelectorAll(".wf-quick").forEach(btn => {
-            btn.onclick = () => startWorkflow(btn.dataset.wf);
-        });
+        el.querySelectorAll(".wf-quick").forEach(btn => { btn.onclick = () => startWorkflow(btn.dataset.wf); });
         el.querySelector("#wf-new-btn")?.addEventListener("click", () => startWorkflow(null));
-
-        // View button → expand steps inline
         el.querySelectorAll(".wf-view-btn").forEach(btn => {
-            btn.onclick = () => {
-                const runId = btn.dataset.runId;
-                const run   = runs.find(r => r.id === runId);
-                if (!run) return;
-                _showRunDetail(run);
-            };
+            btn.onclick = () => { const run = runs.find(r => r.id === btn.dataset.runId); if (run) _showRunDetail(run); };
         });
     }
 
+    el.querySelector("#agent-hub-refresh")?.addEventListener("click", reload);
     await reload();
 }
 
