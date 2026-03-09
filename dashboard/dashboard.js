@@ -970,7 +970,7 @@ function renderAgents(d) {
     const milfred = d.agents?.find(a=>a.id==="milfred");
     const ernst   = d.agents?.find(a=>a.id==="ernst");
     const eva     = d.agents?.find(a=>a.id==="eva");
-    const reports = (d.agents||[]).filter(a=>["gordon","lara","claude"].includes(a.id));
+    const reports = (d.agents||[]).filter(a=>["gordon","lara","claude","hawk"].includes(a.id));
 
     const detailHTML = _selectedAgent
         ? renderAgentDetail(d.agents?.find(a=>a.id===_selectedAgent), d)
@@ -1783,17 +1783,53 @@ function initProjectsPanel(data, el) {
         setTimeout(() => modal.querySelector("#new-proj-name")?.focus(), 50);
     });
 
-    // Delete project (DB projects only)
+    // Delete project (DB projects only) — proper modal, no browser confirm
     el.querySelectorAll(".project-delete-btn").forEach(btn => {
         btn.addEventListener("click", async e => {
             e.stopPropagation();
             const { dbId, name } = btn.dataset;
-            if (!confirm(`Delete project "${name}"?\n\nThis cannot be undone.`)) return;
-            try {
-                await apiDelete(`projects/${dbId}`);
-                showNotif(`Project "${name}" deleted`, "green");
-                loadPanel("projects");
-            } catch(e) { showNotif("Failed: " + e.message, "red"); }
+
+            // Build confirmation modal
+            const modal = createModal({
+                title: "Delete Project?",
+                body: `
+                    <div style="text-align:center;padding:8px 0">
+                        <div style="font-size:2rem;margin-bottom:12px">🗑️</div>
+                        <div style="font-size:0.95rem;color:#fff;margin-bottom:8px">Delete <strong>${escHtml(name)}</strong>?</div>
+                        <div style="font-size:0.82rem;color:var(--text3)">This will permanently delete the project.<br>This action cannot be undone.</div>
+                    </div>`,
+                footer: `<button class="btn btn-ghost" id="del-proj-cancel">Cancel</button>
+                         <button class="btn" id="del-proj-confirm" style="background:#ef4444;color:#fff;border-color:#ef4444">Delete</button>`,
+            });
+
+            modal.querySelector("#del-proj-cancel").onclick = () => modal.remove();
+
+            modal.querySelector("#del-proj-confirm").onclick = async () => {
+                const confirmBtn = modal.querySelector("#del-proj-confirm");
+                confirmBtn.disabled = true;
+                confirmBtn.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></span> Deleting…`;
+
+                try {
+                    await apiDelete(`projects/${dbId}`);
+                    modal.remove();
+
+                    // Animate the card out before reloading
+                    const card = el.querySelector(`[data-db-id="${dbId}"]`)?.closest(".project-tree-item");
+                    if (card) {
+                        card.style.transition = "opacity 0.25s, transform 0.25s";
+                        card.style.opacity = "0";
+                        card.style.transform = "translateX(16px)";
+                        setTimeout(() => loadPanel("projects"), 280);
+                    } else {
+                        loadPanel("projects");
+                    }
+                    showNotif(`Project "${name}" deleted`, "green");
+                } catch(err) {
+                    confirmBtn.disabled = false;
+                    confirmBtn.innerHTML = "Delete";
+                    showNotif("Failed to delete: " + err.message, "red");
+                }
+            };
         });
     });
 
