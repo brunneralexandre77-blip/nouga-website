@@ -2612,7 +2612,7 @@ function renderOffice(d) {
             <div class="panel-subtitle">Pixel art · live agents · click to interact</div>
         </div>
         <div class="office-canvas-wrap">
-            <canvas id="office-canvas" class="office-canvas" width="640" height="480" style="width:100%;height:auto;max-height:580px"></canvas>
+            <canvas id="office-canvas" class="office-canvas" width="640" height="560" style="width:100%;height:auto;max-height:660px"></canvas>
             <div class="office-sidebar">
                 <div class="office-agent-box" id="office-agent-info">
                     <div class="office-hint">Click an agent or object</div>
@@ -2654,7 +2654,7 @@ function _startOfficeCanvas(data, container) {
     const canvas = container.querySelector("#office-canvas");
     if (!canvas) return;
 
-    const CW = 640, CH = 480;
+    const CW = 640, CH = 560;
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
 
@@ -2676,8 +2676,8 @@ function _startOfficeCanvas(data, container) {
             { x: 358, y: 232, agent: "eva"     },
             { x: 492, y: 232, agent: "alex"    },
         ],
-        coffee:  { x: 268, y: 350, w: 240, h: 90 },
-        meeting: { x: 14,  y: 226, w: 160, h: 152 },
+        coffee:  { x: 268, y: 430, w: 240, h: 90 },
+        meeting: { x: 14,  y: 330, w: 160, h: 152 },
     };
     // Coffee machine position inside the break room zone
     const CM_X = ZONES.coffee.x + 88;   // x=356
@@ -2982,37 +2982,37 @@ function _startOfficeCanvas(data, container) {
         ctx.fillStyle = "#c0b8ac"; ctx.fillRect(0, 58, CW, 6);
         ctx.fillStyle = "#d4ccc0"; ctx.fillRect(0, 58, CW, 2); // highlight
 
-        // ── Meeting room north wall  (y=226, x=14–174) ───────────────
-        hw(14, 226, 160);
+        // ── Meeting room north wall  (y=330, x=14–174) ───────────────
+        hw(14, 330, 160);
 
-        // ── Meeting room east wall  (x=174, y=226–378) — glass + door ─
-        vg(174, 226, 54);               // top glass panel
-        // door gap: y=280 to y=318 (h=38)
-        doorV(174, 280, 38);
-        vg(174, 318, 60);               // bottom glass panel
-        vcap(174, 226);                 // top cap once at wall top
+        // ── Meeting room east wall  (x=174, y=330–482) — glass + door ─
+        vg(174, 330, 54);               // top glass panel
+        // door gap: y=384 to y=422 (h=38)
+        doorV(174, 384, 38);
+        vg(174, 422, 60);               // bottom glass panel
+        vcap(174, 330);                 // top cap once at wall top
 
-        // ── Meeting room south wall  (y=378, x=14–174) ───────────────
+        // ── Meeting room south wall  (y=482, x=14–174) ───────────────
         // door gap: x=90 to x=118 (w=28)
-        hw(14,  378, 76);
-        hw(118, 378, 56);
-        doorH(90, 378, 28);
+        hw(14,  482, 76);
+        hw(118, 482, 56);
+        doorH(90, 482, 28);
 
-        // ── Break room north wall  (y=350, x=268–508) ────────────────
+        // ── Break room north wall  (y=430, x=268–508) ────────────────
         // door gap: x=312 to x=344 (w=32)
-        hw(268, 350, 44);
-        hw(344, 350, 164);
-        doorH(312, 350, 32);
+        hw(268, 430, 44);
+        hw(344, 430, 164);
+        doorH(312, 430, 32);
 
-        // ── Break room west wall  (x=268, y=350–440) ─────────────────
-        vw(268, 350, 90);
-        vcap(268, 350);
+        // ── Break room west wall  (x=268, y=430–520) ─────────────────
+        vw(268, 430, 90);
+        vcap(268, 430);
 
         // ── Floor shadows beneath walls ──────────────────────────────
         ctx.fillStyle = "rgba(0,0,0,0.06)";
-        ctx.fillRect(14,  378, 160, 4); // meeting south
-        ctx.fillRect(268, 350, 240, 4); // break room north
-        ctx.fillRect(268, 350,   4, 90); // break room west (east shadow)
+        ctx.fillRect(14,  482, 160, 4); // meeting south
+        ctx.fillRect(268, 430, 240, 4); // break room north
+        ctx.fillRect(268, 430,   4, 90); // break room west (east shadow)
     }
 
     function drawPlant(x, y, type, sway = 0) {
