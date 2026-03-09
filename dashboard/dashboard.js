@@ -3911,6 +3911,7 @@ const SKILLS_DATA = {
         { name: "Claude Code MCP",      icon: "🔧", usedBy: "Claude",      status: "active", desc: "Full MCP tool access" },
         { name: "Antfarm Workflows",    icon: "🐜", usedBy: "Milfred",     status: "active", desc: "Multi-agent orchestration" },
         { name: "RTK (Token Optimizer)", icon: "🚀", usedBy: "All agents",  status: "active", desc: "Reduces tokens by 60-90%" },
+        { name: "Ralph",                 icon: "🔁", usedBy: "Claude",      status: "active", desc: "Autonomous AI development loop" },
     ],
     agents: [
         {
