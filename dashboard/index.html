@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nouga Mission Control</title>
+    <link rel="stylesheet" href="dashboard.css">
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header class="header">
+    <div class="header-logo">
+        <div class="logo-mark">N</div>
+        Nouga Mission Control
+    </div>
+    <div class="header-right">
+        <div class="status-badge">
+            <div class="status-dot" id="api-status-dot"></div>
+            <span id="api-status-label">Connecting…</span>
+        </div>
+        <div class="status-badge">
+            <div class="status-dot dot-red" id="ws-dot"></div>
+            <span id="ws-label">WS offline</span>
+        </div>
+        <button class="notif-bell" id="notif-bell" aria-label="Notifications">
+            🔔
+            <span class="notif-badge" id="notif-badge" style="display:none">0</span>
+        </button>
+        <span class="header-time" id="header-time"></span>
+        <div class="header-user">M</div>
+    </div>
+</header>
+
+<!-- ── Body ── -->
+<div class="layout">
+
+    <!-- Sidebar -->
+    <nav class="sidebar">
+        <div class="sidebar-section">
+            <div class="sidebar-label">Work</div>
+            <button class="nav-item active" data-panel="tasks">
+                <span class="nav-icon">📋</span><span>Tasks</span>
+            </button>
+<button class="nav-item" data-panel="projects">
+                <span class="nav-icon">🗂️</span><span>Projects</span>
+            </button>
+            <button class="nav-item" data-panel="approvals">
+                <span class="nav-icon">✅</span><span>Approvals</span>
+                <span class="nav-badge">2</span>
+            </button>
+            <button class="nav-item" data-panel="calendar">
+                <span class="nav-icon">📅</span><span>Calendar</span>
+            </button>
+            <button class="nav-item" data-panel="team">
+                <span class="nav-icon">🏢</span><span>Company</span>
+            </button>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-label">AI</div>
+            <button class="nav-item" data-panel="agents">
+                <span class="nav-icon">🤖</span><span>Agents</span>
+            </button>
+            <button class="nav-item" data-panel="council">
+                <span class="nav-icon">🏛️</span><span>Council</span>
+            </button>
+            <button class="nav-item" data-panel="memory">
+                <span class="nav-icon">🧠</span><span>Memory</span>
+            </button>
+            <button class="nav-item" data-panel="factory">
+                <span class="nav-icon">🏭</span><span>Factory</span>
+            </button>
+            <button class="nav-item" data-panel="workflows">
+                <span class="nav-icon">👥</span><span>Agent Hub</span>
+            </button>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-label">Operations</div>
+            <button class="nav-item" data-panel="content">
+                <span class="nav-icon">🎨</span><span>Content</span>
+            </button>
+            <button class="nav-item" data-panel="pipeline">
+                <span class="nav-icon">🚀</span><span>Pipeline</span>
+            </button>
+            <button class="nav-item" data-panel="system">
+                <span class="nav-icon">⚙️</span><span>System</span>
+            </button>
+            <button class="nav-item" data-panel="skills">
+                <span class="nav-icon">🧩</span><span>Skills</span>
+            </button>
+            <button class="nav-item" data-panel="radar">
+                <span class="nav-icon">🛡️</span><span>Radar</span>
+            </button>
+        </div>
+
+        <div class="sidebar-section">
+            <div class="sidebar-label">People</div>
+            <button class="nav-item" data-panel="people">
+                <span class="nav-icon">👥</span><span>People</span>
+            </button>
+            <button class="nav-item" data-panel="office">
+                <span class="nav-icon">🏢</span><span>Office</span>
+            </button>
+            <button class="nav-item" data-panel="docs">
+                <span class="nav-icon">📚</span><span>Docs</span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Main content -->
+    <main class="main">
+        <div id="panel-tasks"     class="panel active"></div>
+<div id="panel-agents"    class="panel"></div>
+        <div id="panel-content"   class="panel"></div>
+        <div id="panel-approvals" class="panel"></div>
+        <div id="panel-council"   class="panel"></div>
+        <div id="panel-calendar"  class="panel"></div>
+        <div id="panel-projects"  class="panel"></div>
+        <div id="panel-memory"    class="panel"></div>
+        <div id="panel-docs"      class="panel"></div>
+        <div id="panel-people"    class="panel"></div>
+        <div id="panel-office"    class="panel"></div>
+        <div id="panel-team"      class="panel"></div>
+        <div id="panel-system"    class="panel"></div>
+        <div id="panel-skills"    class="panel"></div>
+        <div id="panel-radar"     class="panel"></div>
+        <div id="panel-factory"   class="panel"></div>
+        <div id="panel-pipeline"  class="panel"></div>
+        <div id="panel-workflows" class="panel"></div>
+    </main>
+</div>
+
+<!-- ── Notification drawer ── -->
+<aside id="notif-drawer" class="notif-drawer">
+    <div class="notif-drawer-header">
+        <div class="notif-drawer-title">🔔 Notifications</div>
+        <div style="display:flex;gap:8px;align-items:center">
+            <span id="ws-drawer-status" style="font-size:0.72rem;color:var(--text3)">Milfred subscription</span>
+            <button class="btn btn-ghost" id="notif-drawer-close" style="padding:3px 8px;font-size:0.8rem">✕</button>
+        </div>
+    </div>
+    <div class="notif-drawer-body">
+        <div id="notif-list"><div class="notif-empty">Waiting for events…</div></div>
+    </div>
+</aside>
+
+<!-- ── Toast container ── -->
+<div id="notif-toasts" class="notif-toasts"></div>
+
+<!-- ── Status bar ── -->
+<footer class="statusbar">
+    <div class="statusbar-item">
+        <span class="dot-green"></span>
+        <span>nouga.ai</span>
+    </div>
+    <div class="statusbar-item">
+        Updated: <span id="statusbar-update">—</span>
+    </div>
+    <div class="statusbar-item">
+        API: <span>api.nouga.ai</span>
+    </div>
+    <div class="statusbar-item" style="margin-left:auto">
+        Refreshes every 30s
+    </div>
+</footer>
+
+<script src="dashboard.js?v=20260310e"></script>
+</body>
+</html>
