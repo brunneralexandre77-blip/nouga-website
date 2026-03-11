@@ -5,7 +5,7 @@
 // Allow local-dev override: in browser console run:
 //   localStorage.setItem('NOUGA_API_HOST', 'http://localhost:5001')
 // then reload. Clear with: localStorage.removeItem('NOUGA_API_HOST')
-const API_HOST = localStorage.getItem('NOUGA_API_HOST') || "http://localhost:5001";
+const API_HOST = localStorage.getItem('NOUGA_API_HOST') || "https://api.nouga.ai";
 const API    = `${API_HOST}/api`;
 const WS_URL = API_HOST;
 
@@ -124,56 +124,15 @@ function initWebSocket() {
         _addNotif(notif);
         _showToast(notif);
         _bumpBadge();
-        const reload = { task: "tasks", agent: "agents", cron: "calendar", council: "council" };
-        if (reload[notif.type] && activePanel === reload[notif.type]) {
-            // Debounce: if many notifications arrive in quick succession, only reload once.
-            if (wsReloadDebounce) clearTimeout(wsReloadDebounce);
-            wsReloadDebounce = setTimeout(() => loadPanel(activePanel), 1000);
-        }
-    });
-    socket.on("chat_sync", (data) => {
-        const feed = document.getElementById("msg-feed");
-        if (data.type === "reply" && data.source_msg_id) {
-            // Agent reply — find the existing bubble and append the reply
-            if (feed) {
-                const wrap = feed.querySelector(`[data-msg-id="${data.source_msg_id}"]`);
-                if (wrap && !wrap.querySelector(".msg-bubble-agent")) {
-                    const tmp = document.createElement("div");
-                    tmp.innerHTML = `<div class="msg-bubble msg-bubble-agent"><div class="msg-meta"><span class="msg-agent-label">🤖 Agent</span></div><div class="msg-text">${escHtml(data.agent_response)}</div></div>`;
-                    if (tmp.firstElementChild) wrap.appendChild(tmp.firstElementChild);
-                    feed.scrollTop = feed.scrollHeight;
-                } else if (!wrap) {
-                    // Message not in view yet — reload panel
-                    if (typeof activePanel !== "undefined" && activePanel === "messages") loadPanel("messages");
-                }
-            }
-        } else {
-            // New inbound message
-            if (feed) {
-                const empty = feed.querySelector(".msg-empty");
-                if (empty) empty.remove();
-                const tmp = document.createElement("div");
-                tmp.innerHTML = _renderMsgBubble({
-                    source_channel: data.source_channel,
-                    user_name:      data.user_name,
-                    content:        data.content,
-                    agent_response: data.agent_response || "",
-                    timestamp:      data.timestamp,
-                });
-                if (tmp.firstElementChild) {
-                    feed.appendChild(tmp.firstElementChild);
-                    feed.scrollTop = feed.scrollHeight;
-                }
-            }
-            // Update badge if not on messages panel
-            if (typeof activePanel !== "undefined" && activePanel !== "messages") {
-                const badge = document.getElementById("msg-nav-badge");
-                if (badge) {
-                    const n = (parseInt(badge.dataset.count || "0")) + 1;
-                    badge.dataset.count = String(n);
-                    badge.textContent = n;
-                    badge.style.display = "";
-                }
+        const panelMap = { task: "tasks", agent: "agents", cron: "calendar", council: "council" };
+        const affectedPanel = panelMap[notif.type];
+        if (affectedPanel) {
+            // Always bust the panel cache so stale data never shows after a change
+            delete panelCache[affectedPanel];
+            // If the user is currently on this panel, reload it live
+            if (activePanel === affectedPanel) {
+                if (wsReloadDebounce) clearTimeout(wsReloadDebounce);
+                wsReloadDebounce = setTimeout(() => loadPanel(activePanel), 1000);
             }
         }
     });
@@ -511,7 +470,7 @@ let _taskAgentFilter = "all";
 
 function renderTasks(d) {
     _tasksData = d;
-    const FILTER_AGENTS = ["all","Milfred","Ernst","Gordon","Lara","Claude","Eva","Alex","Council"];
+    const FILTER_AGENTS = ["all","Milfred","Ernst","Gordon","Lara","Claude","Eva","Alex","Herzog","Hawk","Oak"];
     const filterBar = `
         <div class="task-filter-bar">
             ${FILTER_AGENTS.map(a => `
@@ -1376,57 +1335,7 @@ function renderApprovals(d) {
                         ${a.approved_on} ${badge("approved","green")}
                     </div>
                 </div>`).join("")}
-        </div>
-        <div class="card" style="margin-top:16px" id="cron-approvals-card">
-            <div class="card-title">📅 Pending Cron Approvals</div>
-            <div id="cron-approvals-list"><div style="color:var(--text3);font-size:0.82rem;padding:8px 0">Loading…</div></div>
         </div>`;
-}
-
-async function _loadCronApprovalsList() {
-    const card = document.getElementById("cron-approvals-list");
-    if (!card) return;
-    try {
-        const resp = await fetch(`${API}/cron/approvals`);
-        const json = await resp.json();
-        const approvals = json.data?.approvals || [];
-        if (!approvals.length) {
-            card.innerHTML = `<div style="color:var(--text3);font-size:0.82rem;padding:8px 0">No pending cron approvals.</div>`;
-            return;
-        }
-        card.innerHTML = approvals.map(a => `
-            <div style="padding:14px 0;border-bottom:1px solid var(--border)">
-                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
-                    <div style="font-weight:600;color:#fff;font-size:0.9rem">${escHtml(a.name||"Unnamed")}</div>
-                    <span style="font-size:0.72rem;padding:2px 7px;border-radius:10px;background:rgba(251,191,36,0.15);color:#fbbf24">${escHtml(a.category||"custom")}</span>
-                </div>
-                <div style="font-size:0.78rem;color:var(--text3);font-family:monospace;margin-bottom:4px">${escHtml(a.schedule||"")} — ${escHtml(a.command||"")}</div>
-                ${a.description ? `<div style="font-size:0.8rem;color:var(--text2);margin-bottom:6px">${escHtml(a.description)}</div>` : ""}
-                <div style="font-size:0.75rem;color:var(--text3);margin-bottom:8px">Requested by: <b style="color:var(--text2)">${escHtml(a.requested_by||"")}</b></div>
-                <div style="display:flex;gap:8px">
-                    <button class="btn btn-primary" style="padding:4px 12px;font-size:0.78rem" data-cron-approve="${escHtml(String(a.id))}">✅ Approve</button>
-                    <button class="btn btn-danger"  style="padding:4px 12px;font-size:0.78rem" data-cron-reject="${escHtml(String(a.id))}">❌ Reject</button>
-                </div>
-            </div>`).join("");
-        card.querySelectorAll("[data-cron-approve]").forEach(btn => {
-            btn.onclick = async () => {
-                try { await apiPost(`cron/approvals/${btn.dataset.cronApprove}/approve`, {}); _loadCronApprovalsList(); _refreshCronApprovalBadge(); if (typeof showToast==="function") showToast("✅ Cron job approved","success"); }
-                catch(e) { alert("Approve failed: "+e.message); }
-            };
-        });
-        card.querySelectorAll("[data-cron-reject]").forEach(btn => {
-            btn.onclick = async () => {
-                try { await apiPost(`cron/approvals/${btn.dataset.cronReject}/reject`, {}); _loadCronApprovalsList(); _refreshCronApprovalBadge(); if (typeof showToast==="function") showToast("🗑 Cron job rejected","info"); }
-                catch(e) { alert("Reject failed: "+e.message); }
-            };
-        });
-    } catch(e) {
-        card.innerHTML = `<div style="color:#f87171;font-size:0.82rem;padding:8px 0">Failed to load cron approvals.</div>`;
-    }
-}
-
-function initApprovalsPanel(_data, _container) {
-    _loadCronApprovalsList();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1581,102 +1490,6 @@ function typeText(el, text, speed) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Messages — Cross-channel sync feed
-// ──────────────────────────────────────────────────────────────────────────────
-const CHANNEL_META = {
-    telegram:  { emoji: "📱", label: "Telegram",  cls: "msg-ch-telegram"  },
-    webchat:   { emoji: "💻", label: "Webchat",   cls: "msg-ch-webchat"   },
-    dashboard: { emoji: "🎯", label: "Dashboard", cls: "msg-ch-dashboard" },
-};
-
-function _msgChannelBadge(ch) {
-    const m = CHANNEL_META[ch] || { emoji: "💬", label: ch, cls: "msg-ch-telegram" };
-    return `<span class="msg-channel-badge ${m.cls}">${m.emoji} ${escHtml(m.label)}</span>`;
-}
-
-function _renderMsgBubble(msg) {
-    const ch  = msg.source_channel || "telegram";
-    const ts  = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
-    const hasReply = msg.agent_response && msg.agent_response.trim();
-    return `
-    <div class="msg-bubble-wrap" data-msg-id="${msg.id||""}">
-        <div class="msg-bubble msg-bubble-user">
-            <div class="msg-meta">
-                ${_msgChannelBadge(ch)}
-                <span class="msg-user">${escHtml(msg.user_name || "Alex")}</span>
-                <span class="msg-ts">${ts}</span>
-            </div>
-            <div class="msg-text">${escHtml(msg.content || "")}</div>
-        </div>
-        ${hasReply ? `
-        <div class="msg-bubble msg-bubble-agent">
-            <div class="msg-meta"><span class="msg-agent-label">🤖 Agent</span></div>
-            <div class="msg-text">${escHtml(msg.agent_response)}</div>
-        </div>` : ""}
-    </div>`;
-}
-
-function renderMessages(d) {
-    const msgs = d.messages || [];
-    return `
-        <div class="panel-header">
-            <div class="panel-title">💬 Messages</div>
-            <div class="panel-subtitle">Cross-channel sync · Telegram · Dashboard · real-time</div>
-        </div>
-        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
-            <span class="badge badge-blue" style="font-size:0.72rem">📱 Telegram</span>
-            <span class="badge badge-green" style="font-size:0.72rem">💻 Webchat</span>
-            <span class="badge badge-yellow" style="font-size:0.72rem">🎯 Dashboard</span>
-            <span style="margin-left:auto;font-size:0.75rem;color:var(--text3)">${msgs.length} messages</span>
-        </div>
-        <div id="msg-feed" class="msg-feed">
-            ${msgs.length
-                ? msgs.map(_renderMsgBubble).join("")
-                : `<div class="msg-empty">
-                       <div style="font-size:2.5rem;margin-bottom:8px">💬</div>
-                       <div style="font-weight:600">No messages yet</div>
-                       <div style="font-size:0.8rem;color:var(--text3);margin-top:4px">Send a message below — it syncs to Telegram and gets an agent reply</div>
-                   </div>`}
-        </div>
-        <div class="msg-compose">
-            <input id="msg-input" class="msg-input" type="text" placeholder="Send a message to Milfred (syncs to Telegram)…" autocomplete="off">
-            <button id="msg-send" class="btn btn-primary" style="flex-shrink:0">Send</button>
-        </div>`;
-}
-
-function initMessagesPanel(data, container) {
-    const feed = container.querySelector("#msg-feed");
-    if (feed) feed.scrollTop = feed.scrollHeight;
-
-    const input = container.querySelector("#msg-input");
-    const btn   = container.querySelector("#msg-send");
-    if (!input || !btn) return;
-
-    async function sendMsg() {
-        const text = input.value.trim();
-        if (!text) return;
-        input.value = "";
-        btn.disabled = true;
-        try {
-            await apiPost("chat/ingest", {
-                source_channel: "dashboard",
-                source_msg_id:  String(Date.now()),
-                user_name:      "Alex",
-                content:        text,
-            });
-        } catch(e) {
-            alert("Send failed: " + e.message);
-        } finally {
-            btn.disabled = false;
-            input.focus();
-        }
-    }
-
-    btn.addEventListener("click", sendMsg);
-    input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
 // Calendar — Visual Cron Manager
 // ──────────────────────────────────────────────────────────────────────────────
 function renderCalendar(d) {
@@ -1710,7 +1523,7 @@ function renderCalendar(d) {
                 const catCls = job.category === "security" ? "cal-job-security" :
                                job.category === "trading"  ? "cal-job-trading"  : "cal-job-system";
                 const label = job.is_repeating ? `↻ ${job.name}` : job.name;
-                blocks += `<div class="cal-job-block ${catCls}" data-job-id="${job.id}" title="${escHtml(job.schedule + ' ' + job.command)}" draggable="true">${escHtml(label)}</div>`;
+                blocks += `<div class="cal-job-block ${catCls}" data-job-id="${job.id}" title="${escHtml(job.schedule + ' ' + job.command)}">${escHtml(label)}</div>`;
             });
 
             let nowLine = "";
@@ -1719,7 +1532,7 @@ function renderCalendar(d) {
                 nowLine = `<div class="cal-now-line" style="top:${pct}%;"></div>`;
             }
 
-            rows += `<div class="cal-cell" data-hour="${h}">${blocks}${nowLine}</div>`;
+            rows += `<div class="cal-cell">${blocks}${nowLine}</div>`;
         }
     }
 
@@ -1740,22 +1553,18 @@ function renderCalendar(d) {
             <div class="cal-grid">${header}${rows}</div>
         </div>
         <div style="margin-top:16px"><div class="card">
-            <div class="card-title">📌 Upcoming · Tasks &amp; Jobs</div>
+            <div class="card-title">📌 Upcoming</div>
             ${(d.upcoming || []).map(e => `
-                <div class="service-row cal-upcoming-row" data-task-id="${e.task_id||""}" data-type="${e.type||""}" style="cursor:${e.task_id ? "pointer" : "default"}">
+                <div class="service-row">
                     <div class="service-left">
                         <span style="font-size:1.1rem">${e.emoji}</span>
                         <div>
                             <div class="service-name">${escHtml(e.event)}</div>
-                            <div class="service-port">${escHtml(e.time)}${e.assignee ? ` · ${escHtml(e.assignee)}` : ""}</div>
+                            <div class="service-port">${escHtml(e.time)}</div>
                         </div>
                     </div>
-                    <div style="display:flex;align-items:center;gap:6px">
-                        ${e.priority === "high" ? `<span style="color:#f87171;font-size:0.7rem;font-weight:700">HIGH</span>` : ""}
-                        <span class="tag">${e.type}</span>
-                    </div>
+                    <span class="tag">${e.type}</span>
                 </div>`).join("")}
-            ${!(d.upcoming || []).length ? `<div style="color:var(--text3);font-size:0.85rem;padding:8px 0">No upcoming events. Tasks with due dates will appear here.</div>` : ""}
         </div></div>`;
 }
 
@@ -1769,141 +1578,44 @@ function initCalendarPanel(data, container) {
         });
     });
 
-    // Task row clicks in upcoming → show task detail popover
-    container.querySelectorAll(".cal-upcoming-row[data-task-id]").forEach(row => {
-        const taskId = row.dataset.taskId;
-        if (!taskId) return;
-        row.addEventListener("click", () => {
-            const event = (data.upcoming || []).find(e => String(e.task_id) === taskId);
-            if (!event) return;
-            const modal = createModal({
-                title: `${event.emoji} Task Details`,
-                body: `
-                    <div style="display:flex;flex-direction:column;gap:10px">
-                        <div><strong style="color:#fff">${escHtml(event.event)}</strong></div>
-                        <div style="display:flex;gap:12px;font-size:0.82rem;color:var(--text3)">
-                            <span>📅 Due: ${escHtml(event.time)}</span>
-                            ${event.assignee ? `<span>👤 ${escHtml(event.assignee)}</span>` : ""}
-                            ${event.priority ? `<span>⚡ ${escHtml(event.priority)}</span>` : ""}
-                        </div>
-                        <div style="font-size:0.82rem;color:var(--text2)">Status: <span style="color:#60a5fa">${escHtml(event.status||"todo")}</span></div>
-                    </div>`,
-                footer: `<button class="btn btn-ghost" id="cal-modal-close">Close</button>
-                         <button class="btn btn-primary" id="cal-modal-goto">Go to Tasks</button>`,
-            });
-            modal.querySelector("#cal-modal-close").onclick = () => modal.remove();
-            modal.querySelector("#cal-modal-goto").onclick = () => { modal.remove(); navigate("tasks"); };
-        });
-    });
-
-    // Drag-and-drop rescheduling
-    let _dragJobId = null;
-    container.querySelectorAll(".cal-job-block").forEach(block => {
-        block.addEventListener("dragstart", e => {
-            _dragJobId = parseInt(block.dataset.jobId);
-            e.dataTransfer.effectAllowed = "move";
-        });
-        block.addEventListener("dragend", () => { _dragJobId = null; });
-    });
-    container.querySelectorAll(".cal-cell").forEach(cell => {
-        cell.addEventListener("dragover", e => {
-            e.preventDefault();
-            e.dataTransfer.dropEffect = "move";
-            cell.classList.add("cal-cell-drop");
-        });
-        cell.addEventListener("dragleave", () => cell.classList.remove("cal-cell-drop"));
-        cell.addEventListener("drop", async e => {
-            e.preventDefault();
-            cell.classList.remove("cal-cell-drop");
-            if (_dragJobId === null) return;
-            const newHour = parseInt(cell.dataset.hour);
-            const job = (data.cron_jobs || []).find(j => j.id === _dragJobId);
-            if (!job || isNaN(newHour)) return;
-            const newSchedule = `${job.minute} ${newHour} * * *`;
-            try {
-                await apiPut("cron", { id: job.id, schedule: newSchedule, command: job.command });
-                loadPanel("calendar");
-            } catch(err) {
-                alert("Failed to reschedule: " + err.message);
-            }
-            _dragJobId = null;
-        });
-    });
-
     // Add job button
     container.querySelector("#cal-add-job")?.addEventListener("click", () => showCronModal(null, null));
-
-    _refreshCronApprovalBadge();
-}
-
-async function _refreshCronApprovalBadge() {
-    try {
-        const resp = await fetch(`${API}/cron/approvals`);
-        const json = await resp.json();
-        const count = (json.data?.approvals || []).length;
-        const badge = document.getElementById("cron-approval-badge");
-        if (badge) { badge.textContent = count; badge.style.display = count > 0 ? "" : "none"; }
-    } catch(e) { /* silent */ }
 }
 
 function showCronModal(job, jobId) {
     const isEdit = jobId !== null && jobId !== undefined;
     const schedules = [
-        { label: "Every 5 min",    val: "*/5 * * * *"  },
-        { label: "Every 15 min",   val: "*/15 * * * *" },
-        { label: "Every hour",     val: "0 * * * *"    },
-        { label: "Daily 8 AM",     val: "0 8 * * *"    },
-        { label: "Daily 9 AM",     val: "0 9 * * *"    },
-        { label: "Daily midnight", val: "0 0 * * *"    },
-        { label: "Custom",         val: "custom"        },
+        { label: "Every 5 min",  val: "*/5 * * * *" },
+        { label: "Every hour",   val: "0 * * * *" },
+        { label: "Daily 8 AM",   val: "0 8 * * *" },
+        { label: "Daily 9 AM",   val: "0 9 * * *" },
+        { label: "Daily midnight",val: "0 0 * * *" },
+        { label: "Custom",       val: "custom" },
     ];
-    const categories = ["security","system","agent","trading","custom"];
     const currentSched = job?.schedule || "";
-    const isCustom     = !!currentSched && !schedules.slice(0,-1).some(s => s.val === currentSched);
+    const isCustom     = !schedules.slice(0,-1).some(s => s.val === currentSched);
 
     const modal = createModal({
-        title: isEdit ? `✏️ Edit: ${escHtml(job.name || "Cron Job")}` : "➕ New Cron Job",
+        title: isEdit ? "Edit Cron Job" : "New Cron Job",
         body: `
-            <div class="form-field">
-                <label class="form-label">Name <span style="color:#f87171">*</span></label>
-                <input class="form-input" id="cron-name" value="${escHtml(job?.name||"")}" placeholder="e.g. Daily Security Audit">
-            </div>
-            <div class="form-field">
-                <label class="form-label">Category</label>
-                <select class="form-select" id="cron-cat">
-                    ${categories.map(c => `<option value="${c}"${(job?.category||"custom")===c?" selected":""}>${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join("")}
-                </select>
-            </div>
-            <div class="form-field">
-                <label class="form-label">Frequency</label>
+            <div class="form-field"><label class="form-label">Frequency</label>
                 <select class="form-select" id="cron-freq">
-                    ${schedules.map(s => `<option value="${s.val}"${currentSched===s.val?" selected":""}>${s.label}</option>`).join("")}
-                </select>
-            </div>
+                    ${schedules.map(s => `<option value="${s.val}"${currentSched===s.val||(!isCustom&&s.val==="custom"&&isCustom)?" selected":""}>${s.label}</option>`).join("")}
+                </select></div>
             <div class="form-field" id="cron-custom-wrap" style="${isCustom?"":"display:none"}">
-                <label class="form-label">Custom Schedule</label>
-                <input class="form-input" id="cron-custom" value="${escHtml(isCustom?currentSched:"")}" placeholder="*/5 * * * *" style="font-family:monospace">
+                <label class="form-label">Custom Schedule (cron expr)</label>
+                <input class="form-input" id="cron-custom" value="${escHtml(isCustom ? currentSched : "")}" placeholder="*/5 * * * *" style="font-family:monospace">
             </div>
-            <div class="form-field">
-                <label class="form-label">Command <span style="color:#f87171">*</span></label>
-                <textarea class="form-textarea" id="cron-cmd" placeholder="/bin/bash ~/.openclaw/scripts/my-script.sh" style="font-family:monospace;min-height:60px">${escHtml(job?.command||"")}</textarea>
-            </div>
-            <div class="form-field">
-                <label class="form-label">Description</label>
-                <input class="form-input" id="cron-desc" value="${escHtml(job?.description||"")}" placeholder="What does this job do?">
-            </div>
-            ${!isEdit ? `<div style="padding:8px 12px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:6px;font-size:0.8rem;color:#fbbf24;margin-top:8px">
-                ⚠️ New cron jobs require <strong>Milfred approval</strong> before activation.
-            </div>` : ""}`,
+            <div class="form-field"><label class="form-label">Command</label>
+                <textarea class="form-textarea" id="cron-cmd" placeholder="/bin/bash ~/scripts/my-script.sh" style="font-family:monospace;min-height:60px">${escHtml(job?.command||"")}</textarea></div>`,
         footer: `
-            ${isEdit ? `<button class="btn btn-danger" id="cron-delete">🗑 Delete</button>` : ""}
+            ${isEdit ? `<button class="btn btn-danger" id="cron-delete">Delete</button>` : ""}
             <button class="btn btn-ghost" id="cron-cancel">Cancel</button>
-            <button class="btn btn-primary" id="cron-save">${isEdit ? "Save Changes" : "Submit for Approval"}</button>`,
+            <button class="btn btn-primary" id="cron-save">Save</button>`,
     });
 
-    const freqSel    = modal.querySelector("#cron-freq");
+    const freqSel = modal.querySelector("#cron-freq");
     const customWrap = modal.querySelector("#cron-custom-wrap");
-    if (isCustom) { freqSel.value = "custom"; customWrap.style.display = ""; }
     freqSel.addEventListener("change", () => {
         customWrap.style.display = freqSel.value === "custom" ? "" : "none";
     });
@@ -1912,48 +1624,26 @@ function showCronModal(job, jobId) {
 
     if (isEdit) {
         modal.querySelector("#cron-delete").onclick = async () => {
-            if (!confirm(`Delete cron job "${job.name || jobId}"?`)) return;
-            try {
-                await apiDelete(`cron/${jobId}`);
-                modal.remove();
-                loadPanel("calendar");
-                if (typeof showToast === "function") showToast("🗑 Cron job deleted", "info");
-            } catch(e) { alert("Delete failed: " + e.message); }
+            if (!confirm("Delete this cron job?")) return;
+            try { await apiDelete(`cron/${jobId}`); modal.remove(); loadPanel("calendar"); }
+            catch(e) { alert("Delete failed: " + e.message); }
         };
     }
 
     modal.querySelector("#cron-save").onclick = async () => {
-        const name     = modal.querySelector("#cron-name").value.trim();
-        const freq     = freqSel.value;
-        const schedule = freq === "custom" ? (modal.querySelector("#cron-custom")?.value.trim() || "") : freq;
+        const freq = freqSel.value;
+        const schedule = freq === "custom" ? modal.querySelector("#cron-custom").value.trim() : freq;
         const command  = modal.querySelector("#cron-cmd").value.trim();
-        const category = modal.querySelector("#cron-cat").value;
-        const desc     = modal.querySelector("#cron-desc").value.trim();
-
-        if (!name)     { alert("Name is required"); return; }
-        if (!schedule) { alert("Schedule is required"); return; }
-        if (!command)  { alert("Command is required"); return; }
-
+        if (!schedule || !command) return;
         const saveBtn = modal.querySelector("#cron-save");
-        saveBtn.disabled = true;
-        saveBtn.textContent = isEdit ? "Saving…" : "Submitting…";
-
+        saveBtn.disabled = true; saveBtn.textContent = "Saving…";
         try {
-            if (isEdit) {
-                await apiPut("cron", { id: jobId, schedule, command });
-                modal.remove();
-                loadPanel("calendar");
-                if (typeof showToast === "function") showToast("✅ Cron job updated", "success");
-            } else {
-                await apiPost("cron/approvals", { name, schedule, command, category, description: desc, requested_by: "Alex" });
-                modal.remove();
-                if (typeof showToast === "function") showToast("📋 Submitted for Milfred approval", "info");
-                _refreshCronApprovalBadge();
-            }
+            await apiPut("cron", { id: isEdit ? jobId : undefined, schedule, command });
+            modal.remove();
+            loadPanel("calendar");
         } catch(e) {
-            saveBtn.disabled = false;
-            saveBtn.textContent = isEdit ? "Save Changes" : "Submit for Approval";
-            alert("Failed: " + e.message);
+            saveBtn.disabled = false; saveBtn.textContent = "Save";
+            alert("Save failed: " + e.message);
         }
     };
 }
@@ -2006,7 +1696,7 @@ function _renderProjectCard(p, depth) {
                     </div>
                     <div style="display:flex;align-items:center;gap:8px">
                         ${badge(p.label, statusColor(p.status))}
-                        ${(p.db_id || p.slug) ? `<button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id || p.slug}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑 Delete</button>` : ""}
+                        <button class="btn btn-ghost project-delete-btn" data-db-id="${p.db_id || ""}" data-name="${escHtml(p.name)}" style="font-size:0.7rem;padding:2px 7px;color:var(--red,#f87171);border-color:var(--red,#f87171)44" title="Delete project">🗑</button>
                         <span style="font-size:0.75rem;color:var(--text3)">›</span>
                     </div>
                 </div>
@@ -2024,7 +1714,20 @@ function _renderProjectCard(p, depth) {
         </div>`;
 }
 
+function _hiddenProjects() {
+    try { return new Set(JSON.parse(localStorage.getItem("_hiddenProjects") || "[]")); }
+    catch { return new Set(); }
+}
+function _hideProject(name) {
+    const s = _hiddenProjects(); s.add(name);
+    localStorage.setItem("_hiddenProjects", JSON.stringify([...s]));
+}
+
 function renderProjects(d) {
+    // Filter out locally-deleted static projects
+    const hidden = _hiddenProjects();
+    d = { ...d, projects: d.projects.filter(p => !hidden.has(p.name)) };
+
     // Demo: give "Mission Control Dashboard" sub-projects if the API doesn't provide them
     const mcd = d.projects.find(p => p.name && p.name.toLowerCase().includes("mission control"));
     if (mcd && !mcd.children) {
@@ -2125,11 +1828,18 @@ function initProjectsPanel(data, el) {
                 confirmBtn.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></span> Deleting…`;
 
                 try {
-                    await apiDelete(`projects/${dbId}`);
+                    if (dbId) {
+                        // User-created DB project — delete via API
+                        await apiDelete(`projects/${dbId}`);
+                    } else {
+                        // Static/hardcoded project — hide client-side via localStorage
+                        _hideProject(name);
+                    }
                     modal.remove();
 
                     // Animate the card out before reloading
-                    const card = el.querySelector(`[data-db-id="${dbId}"]`)?.closest(".project-tree-item");
+                    const cardBtn = el.querySelector(`.project-delete-btn[data-name="${name}"]`);
+                    const card = cardBtn?.closest(".project-tree-item");
                     if (card) {
                         card.style.transition = "opacity 0.25s, transform 0.25s";
                         card.style.opacity = "0";
@@ -2360,10 +2070,9 @@ function _miniTimelineBarHtml(task) {
     </div>`;
 }
 
-const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex"];
+const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex", "Herzog", "Hawk", "Oak"];
 const TASK_STATUSES  = [
-    { value: "not_started", label: "Not Started" },
-    { value: "todo",        label: "To Do"       },
+    { value: "todo",        label: "Not Started" },
     { value: "in_progress", label: "In Progress" },
     { value: "done",        label: "Done"        },
 ];
@@ -2405,7 +2114,6 @@ async function renderProjectDetail(project) {
         if (!viewBody) return;
 
         const allTasks = [
-            ...(tasksData.not_started || []),
             ...(tasksData.todo        || []),
             ...(tasksData.in_progress || []),
             ...(tasksData.done        || []),
@@ -2598,7 +2306,7 @@ function initTaskListInteractions(tasks, project) {
             try {
                 const newTask = await apiPost("tasks", {
                     title: "New subtask",
-                    status: "not_started",
+                    status: "todo",
                     project: project.name,
                     parent_id: parentId,
                 });
@@ -2651,7 +2359,7 @@ function initTaskListInteractions(tasks, project) {
         try {
             const newTask = await apiPost("tasks", {
                 title: "New task",
-                status: "not_started",
+                status: "todo",
                 project: project.name,
             });
             _taskViewTasks = [..._taskViewTasks, newTask];
@@ -2821,15 +2529,13 @@ function renderDocs(d) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// ──────────────────────────────────────────────────────────────────────────────
-// People — Team directory + Hawk's Office widget (Task 2 & 7)
+// People (unchanged)
 // ──────────────────────────────────────────────────────────────────────────────
 function renderPeople(d) {
-    const hawk = (d.people || []).find(p => p.id === "hawk");
     return `
         <div class="panel-header">
             <div class="panel-title">👥 People</div>
-            <div class="panel-subtitle">Team directory · humans &amp; agents</div>
+            <div class="panel-subtitle">Team directory</div>
         </div>
         <div class="grid-2">
             ${d.people.map(p => `
@@ -2843,71 +2549,31 @@ function renderPeople(d) {
                             ${badge(p.status,"green")}
                             <span style="font-size:0.72rem;color:var(--text3)">${p.contact}</span>
                         </div>
-                        ${p.id === "hawk" ? `<button class="btn btn-ghost" onclick="navigate('agents')" style="font-size:0.7rem;padding:2px 8px;margin-top:8px">🦅 Visit Office</button>` : ""}
                     </div>
                 </div>`).join("")}
-        </div>
-        ${hawk ? `
-        <div class="card" style="margin-top:16px">
-            <div class="card-title">🦅 Hawk's Office — Code Review Department</div>
-            <div class="grid-2" style="margin-top:10px;gap:10px">
-                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
-                    <div style="font-size:0.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Office Location</div>
-                    <div style="font-size:0.82rem;color:var(--text)">~/.openclaw/agents/hawk/</div>
-                    <div style="font-size:0.75rem;color:var(--text3);margin-top:4px">workspace · logs · reviews · desk</div>
-                </div>
-                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
-                    <div style="font-size:0.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Status</div>
-                    <div style="display:flex;align-items:center;gap:6px">
-                        <span style="width:8px;height:8px;background:#22c55e;border-radius:50%;display:inline-block"></span>
-                        <span style="font-size:0.82rem;color:#22c55e;font-weight:600">Active — On Duty</span>
-                    </div>
-                    <div style="font-size:0.75rem;color:var(--text3);margin-top:4px">Memory access: granted ✓</div>
-                </div>
-                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
-                    <div style="font-size:0.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Capabilities</div>
-                    <div style="font-size:0.78rem;color:var(--text);line-height:1.7">Code Analysis · Security Audit<br>Performance Review · Quality Gate</div>
-                </div>
-                <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
-                    <div style="font-size:0.75rem;color:var(--text3);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px">Quick Actions</div>
-                    <button class="btn btn-ghost" onclick="navigate('agents')" style="font-size:0.75rem;padding:4px 10px;width:100%;margin-bottom:6px">View Agent Profile</button>
-                    <button class="btn btn-ghost" onclick="navigate('workflows')" style="font-size:0.75rem;padding:4px 10px;width:100%">Assign Task</button>
-                </div>
-            </div>
-        </div>` : ""}`;
+        </div>`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Office Panel — Pixel Art Canvas Engine (60 FPS, animated agents)
 // ──────────────────────────────────────────────────────────────────────────────
-// Static office feed — used as fallback when API is unreachable
-const OFFICE_STATIC_FEED = [
-    {agent:"Claude",  action:"Canvas office looking great 🚀"},
-    {agent:"Gordon",  action:"Freqtrade heartbeat — bot healthy"},
-    {agent:"Ernst",   action:"Threat monitor: 132 processes scanned"},
-    {agent:"Milfred", action:"Dashboard API build started"},
-    {agent:"Hawk",    action:"Code review complete ✓"},
-    {agent:"Lara",    action:"Content draft scheduled"},
-];
-
 function renderOffice(d) {
-    const feed = (d?.activity_feed || OFFICE_STATIC_FEED).slice(0, 8);
     return `
         <div class="panel-header">
             <div class="panel-title">🏢 Virtual Office</div>
             <div class="panel-subtitle">Pixel art · live agents · click to interact</div>
         </div>
         <div class="office-canvas-wrap">
-            <canvas id="office-canvas" class="office-canvas" width="640" height="620" style="width:100%;height:auto;max-height:720px"></canvas>
+            <canvas id="office-canvas" class="office-canvas" width="640" height="480" style="width:100%;height:auto;max-height:580px"></canvas>
             <div class="office-sidebar">
                 <div class="office-agent-box" id="office-agent-info">
                     <div class="office-hint">Click an agent or object</div>
                 </div>
                 <div class="office-feed-hdr">Activity Log</div>
                 <div class="office-feed" id="office-feed">
-                    ${feed.map(f => `
+                    ${(d.activity_feed || []).slice(0, 8).map(f => `
                         <div class="office-feed-row">
-                            <span class="feed-agent">${escHtml(f.agent)}</span>
+                            <span class="feed-agent">${f.agent}</span>
                             <span class="feed-action">${escHtml(f.action)}</span>
                         </div>`).join("")}
                 </div>
@@ -2915,32 +2581,11 @@ function renderOffice(d) {
         </div>`;
 }
 
-// initOfficePanel fetches live data itself so the panel renders even when
-// the remote API is unreachable (CORS / network issues on nouga.ai).
-async function initOfficePanel(data, container) {
-    // Try to get live desk statuses; silently fall back to all-busy on failure
-    let liveData = { desks: [], activity_feed: OFFICE_STATIC_FEED };
-    try {
-        const r = await fetchData("office");
-        liveData = r;
-        // Patch feed HTML with live data
-        const feedEl = container.querySelector("#office-feed");
-        if (feedEl && r.activity_feed?.length) {
-            feedEl.innerHTML = r.activity_feed.slice(0, 8).map(f =>
-                `<div class="office-feed-row"><span class="feed-agent">${escHtml(f.agent)}</span><span class="feed-action">${escHtml(f.action)}</span></div>`
-            ).join("");
-        }
-    } catch(_) { /* run on static data — no error shown */ }
-
-    _startOfficeCanvas(liveData, container);
-    _startOfficeCanvas(liveData, container);
-}
-
-function _startOfficeCanvas(data, container) {
+function initOfficePanel(data, container) {
     const canvas = container.querySelector("#office-canvas");
     if (!canvas) return;
 
-    const CW = 640, CH = 620;
+    const CW = 640, CH = 480;
     const ctx = canvas.getContext("2d");
     ctx.imageSmoothingEnabled = false;
 
@@ -2952,18 +2597,20 @@ function _startOfficeCanvas(data, container) {
     const ZONES = {
         upperDesks: [
             { x:  16, y: 75,  agent: "milfred" },
-            { x: 172, y: 75,  agent: "ernst"   },
-            { x: 328, y: 75,  agent: "gordon"  },
-            { x: 484, y: 75,  agent: "lara"    },
+            { x: 136, y: 75,  agent: "ernst"   },
+            { x: 256, y: 75,  agent: "gordon"  },
+            { x: 376, y: 75,  agent: "lara"    },
+            { x: 496, y: 75,  agent: "herzog"  },
         ],
         lowerDesks: [
-            { x:  60, y: 232, agent: "hawk"    },
-            { x: 215, y: 232, agent: "claude"  },
-            { x: 358, y: 232, agent: "eva"     },
-            { x: 492, y: 232, agent: "alex"    },
+            { x:  16, y: 232, agent: "claude"  },
+            { x: 136, y: 232, agent: "eva"     },
+            { x: 256, y: 232, agent: "alex"    },
+            { x: 376, y: 232, agent: "hawk"    },
+            { x: 496, y: 232, agent: "oak"     },
         ],
-        coffee:  { x: 268, y: 430, w: 240, h: 90 },
-        meeting: { x: 14,  y: 430, w: 160, h: 152 },
+        coffee:  { x: 268, y: 350, w: 240, h: 90 },
+        meeting: { x: 14,  y: 226, w: 160, h: 152 },
     };
     // Coffee machine position inside the break room zone
     const CM_X = ZONES.coffee.x + 88;   // x=356
@@ -2971,10 +2618,11 @@ function _startOfficeCanvas(data, container) {
 
     const SCREEN_COLORS = {
         milfred:"#00ff88", ernst:"#ff4444", gordon:"#ffaa00",
-        lara:"#ff44cc", claude:"#00ccff", eva:"#cc88ff", alex:"#4488ff", hawk:"#ff8c00",
+        lara:"#ff44cc", claude:"#00ccff", eva:"#cc88ff", alex:"#4488ff",
+        herzog:"#0891b2", hawk:"#DC143C", oak:"#8B4513",
     };
 
-    const AGENT_EMOJI  = { alex:"👔", eva:"📅", milfred:"🤖", ernst:"🔒", gordon:"📈", lara:"📱", claude:"🧠", hawk:"🦅" };
+    const AGENT_EMOJI  = { alex:"👔", eva:"📅", milfred:"🤖", ernst:"🔒", gordon:"📈", lara:"📱", claude:"🧠", herzog:"🏗️", hawk:"🦅", oak:"🌳" };
     const AGENT_PROPS  = {
         milfred: { accessory:"clipboard" },
         eva:     { accessory:"headset"   },
@@ -2983,7 +2631,6 @@ function _startOfficeCanvas(data, container) {
         lara:    { accessory:"phone"     },
         claude:  { accessory:"headphones"},
         alex:    { accessory:"tie"       },
-        hawk:    { accessory:"glasses"   },
     };
     const AGENT_ACTS   = {
         milfred: ["Reviewing PR #42","Debugging canvas render","Planning Sprint 8","Merging feature branch"],
@@ -2993,19 +2640,20 @@ function _startOfficeCanvas(data, container) {
         claude:  ["AI pipeline design","Architecture review","WebSocket refactor","Memory schema"],
         eva:     ["CEO briefing ready","14:00 confirmed","Routing 3 tasks","Calendar updated"],
         alex:    ["Strategy review","Reading reports","Investor update","Team 1:1 prep"],
-        hawk:    ["Reviewing PR #12","Code audit pass","Security scan 🔍","Checking test coverage","🦅 All clear","Bug found: line 47"],
     };
 
     // ── Agent state ───────────────────────────────────────────────
     const DEFS = [
-        { id:"milfred", name:"Milfred", role:"Tech Lead",     shirtC:"#1e40af", hairC:"#222",    skinC:"#c68642", hx:ZONES.upperDesks[0].x+38, hy:HY_UP,  speed:1.15 },
-        { id:"ernst",   name:"Ernst",   role:"Security",      shirtC:"#374151", hairC:"#111",    skinC:"#f1c27d", hx:ZONES.upperDesks[1].x+38, hy:HY_UP,  speed:0.95 },
-        { id:"gordon",  name:"Gordon",  role:"Trading",       shirtC:"#059669", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.upperDesks[2].x+38, hy:HY_UP,  speed:1.05 },
-        { id:"lara",    name:"Lara",    role:"Growth",        shirtC:"#ca8a04", hairC:"#fde047", skinC:"#f1c27d", hx:ZONES.upperDesks[3].x+38, hy:HY_UP,  speed:1.10, female:true },
-        { id:"hawk",   name:"Hawk",   role:"Code Reviewer", shirtC:"#92400e", hairC:"#1a1a1a", skinC:"#c68642", hx:ZONES.lowerDesks[0].x+38, hy:HY_LOW, speed:1.05 },
-        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[1].x+38, hy:HY_LOW, speed:1.20 },
-        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[2].x+38, hy:HY_LOW, speed:1.00, female:true },
-        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[3].x+38, hy:HY_LOW, speed:0.90 },
+        { id:"milfred", name:"Milfred", role:"Tech Lead",     shirtC:"#1e40af", hairC:"#222",    skinC:"#c68642", hx:ZONES.upperDesks[0].x+30, hy:HY_UP,  speed:1.15 },
+        { id:"ernst",   name:"Ernst",   role:"Security",      shirtC:"#374151", hairC:"#111",    skinC:"#f1c27d", hx:ZONES.upperDesks[1].x+30, hy:HY_UP,  speed:0.95 },
+        { id:"gordon",  name:"Gordon",  role:"Trading",       shirtC:"#059669", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.upperDesks[2].x+30, hy:HY_UP,  speed:1.05 },
+        { id:"lara",    name:"Lara",    role:"Growth",        shirtC:"#ca8a04", hairC:"#fde047", skinC:"#f1c27d", hx:ZONES.upperDesks[3].x+30, hy:HY_UP,  speed:1.10, female:true },
+        { id:"herzog",  name:"Herzog",  role:"Platform Eng.", shirtC:"#0891b2", hairC:"#333",    skinC:"#c68642", hx:ZONES.upperDesks[4].x+30, hy:HY_UP,  speed:1.05 },
+        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+30, hy:HY_LOW, speed:1.20 },
+        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+30, hy:HY_LOW, speed:1.00, female:true },
+        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+30, hy:HY_LOW, speed:0.90 },
+        { id:"hawk",    name:"Hawk",    role:"Quality Lead",  shirtC:"#DC143C", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[3].x+30, hy:HY_LOW, speed:1.00 },
+        { id:"oak",     name:"Oak",     role:"Advisor",       shirtC:"#8B4513", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.lowerDesks[4].x+30, hy:HY_LOW, speed:0.85 },
     ];
     // Build status map from API data (keyed by agent id, lowercase)
     const statusMap = {};
@@ -3268,37 +2916,37 @@ function _startOfficeCanvas(data, container) {
         ctx.fillStyle = "#c0b8ac"; ctx.fillRect(0, 58, CW, 6);
         ctx.fillStyle = "#d4ccc0"; ctx.fillRect(0, 58, CW, 2); // highlight
 
-        // ── Meeting room north wall  (y=430, x=14–174) ───────────────
-        hw(14, 430, 160);
+        // ── Meeting room north wall  (y=226, x=14–174) ───────────────
+        hw(14, 226, 160);
 
-        // ── Meeting room east wall  (x=174, y=430–582) — glass + door ─
-        vg(174, 430, 54);               // top glass panel
-        // door gap: y=484 to y=522 (h=38)
-        doorV(174, 484, 38);
-        vg(174, 522, 60);               // bottom glass panel
-        vcap(174, 430);                 // top cap once at wall top
+        // ── Meeting room east wall  (x=174, y=226–378) — glass + door ─
+        vg(174, 226, 54);               // top glass panel
+        // door gap: y=280 to y=318 (h=38)
+        doorV(174, 280, 38);
+        vg(174, 318, 60);               // bottom glass panel
+        vcap(174, 226);                 // top cap once at wall top
 
-        // ── Meeting room south wall  (y=582, x=14–174) ───────────────
+        // ── Meeting room south wall  (y=378, x=14–174) ───────────────
         // door gap: x=90 to x=118 (w=28)
-        hw(14,  582, 76);
-        hw(118, 582, 56);
-        doorH(90, 582, 28);
+        hw(14,  378, 76);
+        hw(118, 378, 56);
+        doorH(90, 378, 28);
 
-        // ── Break room north wall  (y=430, x=268–508) ────────────────
+        // ── Break room north wall  (y=350, x=268–508) ────────────────
         // door gap: x=312 to x=344 (w=32)
-        hw(268, 430, 44);
-        hw(344, 430, 164);
-        doorH(312, 430, 32);
+        hw(268, 350, 44);
+        hw(344, 350, 164);
+        doorH(312, 350, 32);
 
-        // ── Break room west wall  (x=268, y=430–520) ─────────────────
-        vw(268, 430, 90);
-        vcap(268, 430);
+        // ── Break room west wall  (x=268, y=350–440) ─────────────────
+        vw(268, 350, 90);
+        vcap(268, 350);
 
         // ── Floor shadows beneath walls ──────────────────────────────
         ctx.fillStyle = "rgba(0,0,0,0.06)";
-        ctx.fillRect(14,  582, 160, 4); // meeting south
-        ctx.fillRect(268, 430, 240, 4); // break room north
-        ctx.fillRect(268, 430,   4, 90); // break room west (east shadow)
+        ctx.fillRect(14,  378, 160, 4); // meeting south
+        ctx.fillRect(268, 350, 240, 4); // break room north
+        ctx.fillRect(268, 350,   4, 90); // break room west (east shadow)
     }
 
     function drawPlant(x, y, type, sway = 0) {
@@ -4232,20 +3880,14 @@ function renderTeam(d) {
         </div>
 
         <div class="card" style="margin-bottom:16px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <div class="card-title" style="margin-bottom:0">Mission</div>
-                <button class="btn btn-ghost company-edit-btn" data-section="mission" style="font-size:0.72rem;padding:2px 8px">✏️ Edit</button>
-            </div>
-            <div id="company-mission-view" style="font-size:0.92rem;color:var(--text);line-height:1.7;font-style:italic">"${escHtml(d.mission)}"</div>
+            <div class="card-title">Mission</div>
+            <div style="font-size:0.92rem;color:var(--text);line-height:1.7;font-style:italic">"${escHtml(d.mission)}"</div>
         </div>
 
         <div class="card" style="margin-bottom:16px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <div class="card-title" style="margin-bottom:0">Vision</div>
-                <button class="btn btn-ghost company-edit-btn" data-section="vision" style="font-size:0.72rem;padding:2px 8px">✏️ Edit</button>
-            </div>
-            <div id="company-vision-view" style="font-size:1rem;color:var(--text);line-height:1.8;font-style:italic;padding:8px 0">
-                "${escHtml(d.vision || "To be the intelligence layer for every ambitious team — making world-class thinking accessible to builders everywhere.")}"
+            <div class="card-title">Vision</div>
+            <div style="font-size:1rem;color:var(--text);line-height:1.8;font-style:italic;padding:8px 0">
+                "To be the intelligence layer for every ambitious team — making world-class thinking accessible to builders everywhere."
             </div>
             <div class="grid-2" style="margin-top:12px">
                 <div>
@@ -4268,11 +3910,7 @@ function renderTeam(d) {
         </div>
 
         <div class="card" style="margin-bottom:16px">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <div class="card-title" style="margin-bottom:0">Strategy</div>
-                <button class="btn btn-ghost company-edit-btn" data-section="strategy" style="font-size:0.72rem;padding:2px 8px">✏️ Edit</button>
-            </div>
-            <div id="company-strategy-view" style="font-size:0.88rem;color:var(--text);line-height:1.7;white-space:pre-wrap">${escHtml(d.strategy || "")}</div>
+            <div class="card-title">Strategy</div>
             <div style="margin-bottom:14px">
                 <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🗺️ Where Do We Play</div>
                 <div class="grid-2" style="gap:10px">
@@ -4319,63 +3957,13 @@ function renderTeam(d) {
         </div>
 
         <div class="card">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-                <div class="card-title" style="margin-bottom:0">Company Goals</div>
-                <button class="btn btn-ghost company-edit-btn" data-section="goals" style="font-size:0.72rem;padding:2px 8px">✏️ Edit</button>
-            </div>
-            <ul class="checklist" id="company-goals-view">
+            <div class="card-title">Company Goals</div>
+            <ul class="checklist">
                 ${d.goals.map(g=>`<li class="check-item"><span class="check-icon">🎯</span><span style="font-size:0.85rem">${escHtml(g)}</span></li>`).join("")}
             </ul>
         </div>`;
 }
 
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Task 6: Company section editing
-// ──────────────────────────────────────────────────────────────────────────────
-function initTeamPanel(data, el) {
-    el.querySelectorAll(".company-edit-btn").forEach(btn => {
-        btn.addEventListener("click", () => {
-            const section = btn.dataset.section;
-            const isGoals = section === "goals";
-            const currentVal = isGoals
-                ? (data.goals || []).join("\n")
-                : data.mission || "";
-
-            const modal = createModal({
-                title: `Edit ${section.charAt(0).toUpperCase() + section.slice(1)}`,
-                body: `
-                    <div style="display:flex;flex-direction:column;gap:10px">
-                        <div style="font-size:0.8rem;color:var(--text3)">${isGoals ? "One goal per line" : "Edit mission statement"}</div>
-                        <textarea id="company-edit-ta" class="form-input" rows="6" style="width:100%;resize:vertical;font-size:0.88rem;line-height:1.6">${escHtml(currentVal)}</textarea>
-                    </div>`,
-                footer: `<button class="btn btn-ghost" id="co-cancel">Cancel</button>
-                         <button class="btn btn-primary" id="co-save">Save</button>`,
-            });
-
-            modal.querySelector("#co-cancel").onclick = () => modal.remove();
-            modal.querySelector("#co-save").onclick = async () => {
-                const saveBtn = modal.querySelector("#co-save");
-                saveBtn.disabled = true;
-                saveBtn.textContent = "Saving…";
-                const raw = modal.querySelector("#company-edit-ta").value;
-                const content = isGoals
-                    ? raw.split("\n").map(s => s.trim()).filter(Boolean)
-                    : raw.trim();
-                try {
-                    await apiPut(`company/${section}`, { content });
-                    modal.remove();
-                    showNotif(`${section} updated`, "green");
-                    loadPanel("team");
-                } catch(e) {
-                    saveBtn.disabled = false;
-                    saveBtn.textContent = "Save";
-                    showNotif("Save failed: " + e.message, "red");
-                }
-            };
-        });
-    });
-}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // System — Network Diagram + Version Checker
@@ -5401,9 +4989,6 @@ async function initWorkflowsPanel(_, el) {
 
     async function reload() {
         body.innerHTML = `<div class="loading"><div class="spinner"></div> Loading…</div>`;
-        // Always fetch fresh task data so status matches the Tasks panel
-        delete panelCache["tasks"];
-        delete panelCache["agents"];
 
         const PRIO_ORDER = { high: 0, normal: 1, low: 2 };
         let agents = [], allTasks = [], runs = [], wfDefs = [];
@@ -5814,16 +5399,15 @@ const PANELS = {
     tasks:     { fn: renderTasks,     endpoint: "tasks",    init: initTasksPanel   },
     agents:    { fn: renderAgents,    endpoint: "agents",   init: initAgentsPanel  },
     content:   { fn: renderContent,   endpoint: "content"                          },
-    approvals: { fn: renderApprovals, endpoint: "approvals", init: initApprovalsPanel },
+    approvals: { fn: renderApprovals, endpoint: "approvals"                        },
     council:   { fn: renderCouncil,   endpoint: "council",  init: initCouncilPanel },
     calendar:  { fn: renderCalendar,  endpoint: "calendar", init: initCalendarPanel},
-    messages:  { fn: renderMessages,  endpoint: "chat/feed", init: initMessagesPanel},
     projects:  { fn: renderProjects,  endpoint: "projects", init: initProjectsPanel },
     memory:    { fn: renderMemory,    endpoint: "memory"                           },
     docs:      { fn: renderDocs,      endpoint: "docs"                             },
     people:    { fn: renderPeople,    endpoint: "people"                           },
-    office:    { fn: renderOffice,    endpoint: null,        init: initOfficePanel  },
-    team:      { fn: renderTeam,      endpoint: "team",     init: initTeamPanel    },
+    office:    { fn: renderOffice,    endpoint: "office",   init: initOfficePanel  },
+    team:      { fn: renderTeam,      endpoint: "team"                             },
     system:    { fn: renderSystem,    endpoint: "system",   init: initSystemPanel  },
     skills:    { fn: renderSkills,    endpoint: null                               },
     radar:     { fn: renderRadar,     endpoint: "radar"                            },
@@ -5844,10 +5428,6 @@ function navigate(panelId) {
         el.classList.toggle("active", el.id === `panel-${panelId}`);
     });
     loadPanel(panelId);
-    if (panelId === "messages") {
-        const b = document.getElementById("msg-nav-badge");
-        if (b) { b.style.display = "none"; b.dataset.count = "0"; }
-    }
 }
 
 async function loadPanel(panelId) {
@@ -6294,6 +5874,36 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
+    // Draggable sidebar sections (Task 5)
+    (function initDraggableSidebar() {
+        const sidebar = document.querySelector(".sidebar");
+        if (!sidebar || typeof Sortable === "undefined") return;
+        const sections = sidebar.querySelectorAll(".sidebar-section");
+        sections.forEach(s => {
+            const lbl = s.querySelector(".sidebar-label");
+            if (lbl) { lbl.style.cursor = "grab"; lbl.title = "Drag to reorder"; }
+        });
+        Sortable.create(sidebar, {
+            animation: 150,
+            handle: ".sidebar-label",
+            ghostClass: "sortable-ghost",
+            onEnd() {
+                const order = [...sidebar.querySelectorAll(".sidebar-label")].map(l => l.textContent.trim());
+                localStorage.setItem("_sidebarOrder", JSON.stringify(order));
+            }
+        });
+        // Restore saved order
+        try {
+            const saved = JSON.parse(localStorage.getItem("_sidebarOrder") || "null");
+            if (saved) {
+                saved.forEach(label => {
+                    const sec = [...sidebar.querySelectorAll(".sidebar-section")].find(s => s.querySelector(".sidebar-label")?.textContent.trim() === label);
+                    if (sec) sidebar.appendChild(sec);
+                });
+            }
+        } catch {}
+    })();
+
     navigate("tasks");
     startRefresh();
     checkHealth();
@@ -6304,98 +5914,5 @@ document.addEventListener("DOMContentLoaded", () => {
     setInterval(updateStatusBar,  5000);
     setInterval(checkHealth,     60000);
     updateClock();
-
-    // Task 5: Draggable sidebar sections
-    initDraggableSidebar();
 });
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Task 5: Draggable sidebar sections
-// ──────────────────────────────────────────────────────────────────────────────
-function initDraggableSidebar() {
-    const sidebar = document.querySelector(".sidebar");
-    if (!sidebar) return;
-
-    // ── helpers ──────────────────────────────────────────────────────────────
-    function makeDraggable(container, itemSelector, storageKey) {
-        let src = null;
-
-        container.querySelectorAll(itemSelector).forEach(item => {
-            item.setAttribute("draggable", "true");
-
-            item.addEventListener("dragstart", e => {
-                src = item;
-                e.dataTransfer.effectAllowed = "move";
-                e.dataTransfer.setData("text/plain", "");
-                setTimeout(() => item.classList.add("sidebar-dragging"), 0);
-                e.stopPropagation();   // prevent section drag from firing
-            });
-
-            item.addEventListener("dragend", () => {
-                item.classList.remove("sidebar-dragging");
-                container.querySelectorAll(itemSelector).forEach(i => i.classList.remove("sidebar-drag-over"));
-                src = null;
-                // save order
-                const order = [...container.querySelectorAll(itemSelector)].map(i => i.dataset.panel || i.textContent.trim());
-                localStorage.setItem(storageKey, JSON.stringify(order));
-            });
-
-            item.addEventListener("dragover", e => {
-                if (!src || src === item) return;
-                e.preventDefault(); e.stopPropagation();
-                container.querySelectorAll(itemSelector).forEach(i => i.classList.remove("sidebar-drag-over"));
-                item.classList.add("sidebar-drag-over");
-            });
-
-            item.addEventListener("drop", e => {
-                if (!src || src === item) return;
-                e.preventDefault(); e.stopPropagation();
-                const all = [...container.querySelectorAll(itemSelector)];
-                if (all.indexOf(src) < all.indexOf(item)) container.insertBefore(src, item.nextSibling);
-                else container.insertBefore(src, item);
-                container.querySelectorAll(itemSelector).forEach(i => i.classList.remove("sidebar-drag-over"));
-            });
-        });
-    }
-
-    // ── Section drag (reorder Work / AI / Operations / People) ────────────
-    function addSectionHandles() {
-        sidebar.querySelectorAll(".sidebar-section").forEach(sec => {
-            const label = sec.querySelector(".sidebar-label");
-            if (!label || label.querySelector(".sidebar-drag-handle")) return;
-            const h = document.createElement("span");
-            h.className = "sidebar-drag-handle";
-            h.textContent = "⠿";
-            h.style.cssText = "opacity:0.4;font-size:0.85rem;margin-right:5px;cursor:grab;user-select:none;display:inline-block";
-            label.prepend(h);
-        });
-    }
-
-    function restoreOrder(container, itemSelector, storageKey, keyFn) {
-        try {
-            const saved = JSON.parse(localStorage.getItem(storageKey) || "null");
-            if (!saved?.length) return;
-            saved.forEach(key => {
-                const item = [...container.querySelectorAll(itemSelector)].find(i => keyFn(i) === key);
-                if (item) container.appendChild(item);
-            });
-        } catch(_) {}
-    }
-
-    // Restore + wire section drag
-    restoreOrder(sidebar, ".sidebar-section", "sidebar_section_order",
-        s => s.querySelector(".sidebar-label")?.textContent.trim().replace(/^[⠿\s]+/, "") || "");
-    addSectionHandles();
-    makeDraggable(sidebar, ".sidebar-section", "sidebar_section_order");
-
-    // ── Item drag within each section (reorder nav-items inside Work etc.) ─
-    sidebar.querySelectorAll(".sidebar-section").forEach(sec => {
-        const label = sec.querySelector(".sidebar-label");
-        const sectionName = label?.textContent.trim().replace(/^[⠿\s]+/, "") || "section";
-        const key = `sidebar_items_${sectionName}`;
-
-        restoreOrder(sec, ".nav-item", key, i => i.dataset.panel || "");
-        makeDraggable(sec, ".nav-item", key);
-    });
-}
 // Delete button fix deployed Mon Mar  9 21:25:04 CET 2026
