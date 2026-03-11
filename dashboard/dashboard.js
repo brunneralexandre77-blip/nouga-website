@@ -2918,37 +2918,37 @@ function initOfficePanel(data, container) {
         ctx.fillStyle = "#c0b8ac"; ctx.fillRect(0, 58, CW, 6);
         ctx.fillStyle = "#d4ccc0"; ctx.fillRect(0, 58, CW, 2); // highlight
 
-        // ── Meeting room north wall  (y=226, x=14–174) ───────────────
-        hw(14, 226, 160);
+        // ── Meeting room north wall  (y=400, x=14–174) ───────────────
+        hw(14, 400, 160);
 
-        // ── Meeting room east wall  (x=174, y=226–378) — glass + door ─
-        vg(174, 226, 54);               // top glass panel
-        // door gap: y=280 to y=318 (h=38)
-        doorV(174, 280, 38);
-        vg(174, 318, 60);               // bottom glass panel
-        vcap(174, 226);                 // top cap once at wall top
+        // ── Meeting room east wall  (x=174, y=400–552) — glass + door ─
+        vg(174, 400, 54);               // top glass panel
+        // door gap: y=454 to y=492 (h=38)
+        doorV(174, 454, 38);
+        vg(174, 492, 60);               // bottom glass panel
+        vcap(174, 400);                 // top cap once at wall top
 
-        // ── Meeting room south wall  (y=378, x=14–174) ───────────────
+        // ── Meeting room south wall  (y=552, x=14–174) ───────────────
         // door gap: x=90 to x=118 (w=28)
-        hw(14,  378, 76);
-        hw(118, 378, 56);
-        doorH(90, 378, 28);
+        hw(14,  552, 76);
+        hw(118, 552, 56);
+        doorH(90, 552, 28);
 
-        // ── Break room north wall  (y=350, x=268–508) ────────────────
+        // ── Break room north wall  (y=400, x=268–508) ────────────────
         // door gap: x=312 to x=344 (w=32)
-        hw(268, 350, 44);
-        hw(344, 350, 164);
-        doorH(312, 350, 32);
+        hw(268, 400, 44);
+        hw(344, 400, 164);
+        doorH(312, 400, 32);
 
-        // ── Break room west wall  (x=268, y=350–440) ─────────────────
-        vw(268, 350, 90);
-        vcap(268, 350);
+        // ── Break room west wall  (x=268, y=400–552) ─────────────────
+        vw(268, 400, 152);
+        vcap(268, 400);
 
         // ── Floor shadows beneath walls ──────────────────────────────
         ctx.fillStyle = "rgba(0,0,0,0.06)";
-        ctx.fillRect(14,  378, 160, 4); // meeting south
-        ctx.fillRect(268, 350, 240, 4); // break room north
-        ctx.fillRect(268, 350,   4, 90); // break room west (east shadow)
+        ctx.fillRect(14,  552, 160, 4); // meeting south
+        ctx.fillRect(268, 400, 240, 4); // break room north
+        ctx.fillRect(268, 400,   4, 152); // break room west (east shadow)
     }
 
     function drawPlant(x, y, type, sway = 0) {
