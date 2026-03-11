@@ -2609,12 +2609,12 @@ function initOfficePanel(data, container) {
             { x: 376, y: 232, agent: "hawk"    },
             { x: 496, y: 232, agent: "oak"     },
         ],
-        coffee:  { x: 268, y: 350, w: 240, h: 90 },
+        coffee:  { x: 268, y: 226, w: 240, h: 152 },
         meeting: { x: 14,  y: 226, w: 160, h: 152 },
     };
     // Coffee machine position inside the break room zone
     const CM_X = ZONES.coffee.x + 88;   // x=356
-    const CM_Y = ZONES.coffee.y + 8;    // y=358
+    const CM_Y = ZONES.coffee.y + 20;   // y=246
 
     const SCREEN_COLORS = {
         milfred:"#00ff88", ernst:"#ff4444", gordon:"#ffaa00",
