@@ -2597,14 +2597,15 @@ function initOfficePanel(data, container) {
     const ZONES = {
         upperDesks: [
             { x:  16, y: 75,  agent: "milfred" },
-            { x: 172, y: 75,  agent: "ernst"   },
-            { x: 328, y: 75,  agent: "gordon"  },
-            { x: 484, y: 75,  agent: "lara"    },
+            { x: 136, y: 75,  agent: "ernst"   },
+            { x: 256, y: 75,  agent: "gordon"  },
+            { x: 376, y: 75,  agent: "lara"    },
+            { x: 496, y: 75,  agent: "herzog"  },
         ],
         lowerDesks: [
-            { x: 215, y: 232, agent: "claude"  },
-            { x: 358, y: 232, agent: "eva"     },
-            { x: 492, y: 232, agent: "alex"    },
+            { x:  88, y: 232, agent: "claude"  },
+            { x: 208, y: 232, agent: "eva"     },
+            { x: 328, y: 232, agent: "alex"    },
         ],
         coffee:  { x: 268, y: 350, w: 240, h: 90 },
         meeting: { x: 14,  y: 226, w: 160, h: 152 },
@@ -2640,14 +2641,14 @@ function initOfficePanel(data, container) {
 
     // ── Agent state ───────────────────────────────────────────────
     const DEFS = [
-        { id:"milfred", name:"Milfred", role:"Tech Lead",     shirtC:"#1e40af", hairC:"#222",    skinC:"#c68642", hx:ZONES.upperDesks[0].x+38, hy:HY_UP,  speed:1.15 },
-        { id:"ernst",   name:"Ernst",   role:"Security",      shirtC:"#374151", hairC:"#111",    skinC:"#f1c27d", hx:ZONES.upperDesks[1].x+38, hy:HY_UP,  speed:0.95 },
-        { id:"gordon",  name:"Gordon",  role:"Trading",       shirtC:"#059669", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.upperDesks[2].x+38, hy:HY_UP,  speed:1.05 },
-        { id:"lara",    name:"Lara",    role:"Growth",        shirtC:"#ca8a04", hairC:"#fde047", skinC:"#f1c27d", hx:ZONES.upperDesks[3].x+38, hy:HY_UP,  speed:1.10, female:true },
-        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+38, hy:HY_LOW, speed:1.20 },
-        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+38, hy:HY_LOW, speed:1.00, female:true },
-        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+38, hy:HY_LOW, speed:0.90 },
-        { id:"herzog", name:"Herzog", role:"System Architect", shirtC:"#0891b2", hairC:"#333", skinC:"#c68642", hx:ZONES.lowerDesks[3].x+38, hy:HY_LOW, speed:1.05 },
+        { id:"milfred", name:"Milfred", role:"Tech Lead",     shirtC:"#1e40af", hairC:"#222",    skinC:"#c68642", hx:ZONES.upperDesks[0].x+30, hy:HY_UP,  speed:1.15 },
+        { id:"ernst",   name:"Ernst",   role:"Security",      shirtC:"#374151", hairC:"#111",    skinC:"#f1c27d", hx:ZONES.upperDesks[1].x+30, hy:HY_UP,  speed:0.95 },
+        { id:"gordon",  name:"Gordon",  role:"Trading",       shirtC:"#059669", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.upperDesks[2].x+30, hy:HY_UP,  speed:1.05 },
+        { id:"lara",    name:"Lara",    role:"Growth",        shirtC:"#ca8a04", hairC:"#fde047", skinC:"#f1c27d", hx:ZONES.upperDesks[3].x+30, hy:HY_UP,  speed:1.10, female:true },
+        { id:"herzog",  name:"Herzog",  role:"Platform Eng.", shirtC:"#0891b2", hairC:"#333",    skinC:"#c68642", hx:ZONES.upperDesks[4].x+30, hy:HY_UP,  speed:1.05 },
+        { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+30, hy:HY_LOW, speed:1.20 },
+        { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+30, hy:HY_LOW, speed:1.00, female:true },
+        { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+30, hy:HY_LOW, speed:0.90 },
     ];
     // Build status map from API data (keyed by agent id, lowercase)
     const statusMap = {};
