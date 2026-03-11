@@ -470,7 +470,7 @@ let _taskAgentFilter = "all";
 
 function renderTasks(d) {
     _tasksData = d;
-    const FILTER_AGENTS = ["all","Milfred","Ernst","Gordon","Lara","Claude","Eva","Alex","Council"];
+    const FILTER_AGENTS = ["all","Milfred","Ernst","Gordon","Lara","Claude","Eva","Alex","Council","Herzog"];
     const filterBar = `
         <div class="task-filter-bar">
             ${FILTER_AGENTS.map(a => `
@@ -2070,7 +2070,7 @@ function _miniTimelineBarHtml(task) {
     </div>`;
 }
 
-const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex"];
+const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex", "Herzog"];
 const TASK_STATUSES  = [
     { value: "todo",        label: "Not Started" },
     { value: "in_progress", label: "In Progress" },
@@ -2647,6 +2647,7 @@ function initOfficePanel(data, container) {
         { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+38, hy:HY_LOW, speed:1.20 },
         { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+38, hy:HY_LOW, speed:1.00, female:true },
         { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+38, hy:HY_LOW, speed:0.90 },
+        { id:"herzog", name:"Herzog", role:"System Architect", shirtC:"#0891b2", hairC:"#333", skinC:"#c68642", hx:ZONES.lowerDesks[3].x+38, hy:HY_LOW, speed:1.05 },
     ];
     // Build status map from API data (keyed by agent id, lowercase)
     const statusMap = {};

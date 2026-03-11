@@ -5,7 +5,7 @@
 // Allow local-dev override: in browser console run:
 //   localStorage.setItem('NOUGA_API_HOST', 'http://localhost:5001')
 // then reload. Clear with: localStorage.removeItem('NOUGA_API_HOST')
-const API_HOST = localStorage.getItem('NOUGA_API_HOST') || "https://api.nouga.ai";
+const API_HOST = localStorage.getItem('NOUGA_API_HOST') || "http://localhost:5001";
 const API    = `${API_HOST}/api`;
 const WS_URL = API_HOST;
 
@@ -129,6 +129,52 @@ function initWebSocket() {
             // Debounce: if many notifications arrive in quick succession, only reload once.
             if (wsReloadDebounce) clearTimeout(wsReloadDebounce);
             wsReloadDebounce = setTimeout(() => loadPanel(activePanel), 1000);
+        }
+    });
+    socket.on("chat_sync", (data) => {
+        const feed = document.getElementById("msg-feed");
+        if (data.type === "reply" && data.source_msg_id) {
+            // Agent reply — find the existing bubble and append the reply
+            if (feed) {
+                const wrap = feed.querySelector(`[data-msg-id="${data.source_msg_id}"]`);
+                if (wrap && !wrap.querySelector(".msg-bubble-agent")) {
+                    const tmp = document.createElement("div");
+                    tmp.innerHTML = `<div class="msg-bubble msg-bubble-agent"><div class="msg-meta"><span class="msg-agent-label">🤖 Agent</span></div><div class="msg-text">${escHtml(data.agent_response)}</div></div>`;
+                    if (tmp.firstElementChild) wrap.appendChild(tmp.firstElementChild);
+                    feed.scrollTop = feed.scrollHeight;
+                } else if (!wrap) {
+                    // Message not in view yet — reload panel
+                    if (typeof activePanel !== "undefined" && activePanel === "messages") loadPanel("messages");
+                }
+            }
+        } else {
+            // New inbound message
+            if (feed) {
+                const empty = feed.querySelector(".msg-empty");
+                if (empty) empty.remove();
+                const tmp = document.createElement("div");
+                tmp.innerHTML = _renderMsgBubble({
+                    source_channel: data.source_channel,
+                    user_name:      data.user_name,
+                    content:        data.content,
+                    agent_response: data.agent_response || "",
+                    timestamp:      data.timestamp,
+                });
+                if (tmp.firstElementChild) {
+                    feed.appendChild(tmp.firstElementChild);
+                    feed.scrollTop = feed.scrollHeight;
+                }
+            }
+            // Update badge if not on messages panel
+            if (typeof activePanel !== "undefined" && activePanel !== "messages") {
+                const badge = document.getElementById("msg-nav-badge");
+                if (badge) {
+                    const n = (parseInt(badge.dataset.count || "0")) + 1;
+                    badge.dataset.count = String(n);
+                    badge.textContent = n;
+                    badge.style.display = "";
+                }
+            }
         }
     });
 }
@@ -1330,7 +1376,57 @@ function renderApprovals(d) {
                         ${a.approved_on} ${badge("approved","green")}
                     </div>
                 </div>`).join("")}
+        </div>
+        <div class="card" style="margin-top:16px" id="cron-approvals-card">
+            <div class="card-title">📅 Pending Cron Approvals</div>
+            <div id="cron-approvals-list"><div style="color:var(--text3);font-size:0.82rem;padding:8px 0">Loading…</div></div>
         </div>`;
+}
+
+async function _loadCronApprovalsList() {
+    const card = document.getElementById("cron-approvals-list");
+    if (!card) return;
+    try {
+        const resp = await fetch(`${API}/cron/approvals`);
+        const json = await resp.json();
+        const approvals = json.data?.approvals || [];
+        if (!approvals.length) {
+            card.innerHTML = `<div style="color:var(--text3);font-size:0.82rem;padding:8px 0">No pending cron approvals.</div>`;
+            return;
+        }
+        card.innerHTML = approvals.map(a => `
+            <div style="padding:14px 0;border-bottom:1px solid var(--border)">
+                <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+                    <div style="font-weight:600;color:#fff;font-size:0.9rem">${escHtml(a.name||"Unnamed")}</div>
+                    <span style="font-size:0.72rem;padding:2px 7px;border-radius:10px;background:rgba(251,191,36,0.15);color:#fbbf24">${escHtml(a.category||"custom")}</span>
+                </div>
+                <div style="font-size:0.78rem;color:var(--text3);font-family:monospace;margin-bottom:4px">${escHtml(a.schedule||"")} — ${escHtml(a.command||"")}</div>
+                ${a.description ? `<div style="font-size:0.8rem;color:var(--text2);margin-bottom:6px">${escHtml(a.description)}</div>` : ""}
+                <div style="font-size:0.75rem;color:var(--text3);margin-bottom:8px">Requested by: <b style="color:var(--text2)">${escHtml(a.requested_by||"")}</b></div>
+                <div style="display:flex;gap:8px">
+                    <button class="btn btn-primary" style="padding:4px 12px;font-size:0.78rem" data-cron-approve="${escHtml(String(a.id))}">✅ Approve</button>
+                    <button class="btn btn-danger"  style="padding:4px 12px;font-size:0.78rem" data-cron-reject="${escHtml(String(a.id))}">❌ Reject</button>
+                </div>
+            </div>`).join("");
+        card.querySelectorAll("[data-cron-approve]").forEach(btn => {
+            btn.onclick = async () => {
+                try { await apiPost(`cron/approvals/${btn.dataset.cronApprove}/approve`, {}); _loadCronApprovalsList(); _refreshCronApprovalBadge(); if (typeof showToast==="function") showToast("✅ Cron job approved","success"); }
+                catch(e) { alert("Approve failed: "+e.message); }
+            };
+        });
+        card.querySelectorAll("[data-cron-reject]").forEach(btn => {
+            btn.onclick = async () => {
+                try { await apiPost(`cron/approvals/${btn.dataset.cronReject}/reject`, {}); _loadCronApprovalsList(); _refreshCronApprovalBadge(); if (typeof showToast==="function") showToast("🗑 Cron job rejected","info"); }
+                catch(e) { alert("Reject failed: "+e.message); }
+            };
+        });
+    } catch(e) {
+        card.innerHTML = `<div style="color:#f87171;font-size:0.82rem;padding:8px 0">Failed to load cron approvals.</div>`;
+    }
+}
+
+function initApprovalsPanel(_data, _container) {
+    _loadCronApprovalsList();
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -1485,6 +1581,102 @@ function typeText(el, text, speed) {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// Messages — Cross-channel sync feed
+// ──────────────────────────────────────────────────────────────────────────────
+const CHANNEL_META = {
+    telegram:  { emoji: "📱", label: "Telegram",  cls: "msg-ch-telegram"  },
+    webchat:   { emoji: "💻", label: "Webchat",   cls: "msg-ch-webchat"   },
+    dashboard: { emoji: "🎯", label: "Dashboard", cls: "msg-ch-dashboard" },
+};
+
+function _msgChannelBadge(ch) {
+    const m = CHANNEL_META[ch] || { emoji: "💬", label: ch, cls: "msg-ch-telegram" };
+    return `<span class="msg-channel-badge ${m.cls}">${m.emoji} ${escHtml(m.label)}</span>`;
+}
+
+function _renderMsgBubble(msg) {
+    const ch  = msg.source_channel || "telegram";
+    const ts  = msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
+    const hasReply = msg.agent_response && msg.agent_response.trim();
+    return `
+    <div class="msg-bubble-wrap" data-msg-id="${msg.id||""}">
+        <div class="msg-bubble msg-bubble-user">
+            <div class="msg-meta">
+                ${_msgChannelBadge(ch)}
+                <span class="msg-user">${escHtml(msg.user_name || "Alex")}</span>
+                <span class="msg-ts">${ts}</span>
+            </div>
+            <div class="msg-text">${escHtml(msg.content || "")}</div>
+        </div>
+        ${hasReply ? `
+        <div class="msg-bubble msg-bubble-agent">
+            <div class="msg-meta"><span class="msg-agent-label">🤖 Agent</span></div>
+            <div class="msg-text">${escHtml(msg.agent_response)}</div>
+        </div>` : ""}
+    </div>`;
+}
+
+function renderMessages(d) {
+    const msgs = d.messages || [];
+    return `
+        <div class="panel-header">
+            <div class="panel-title">💬 Messages</div>
+            <div class="panel-subtitle">Cross-channel sync · Telegram · Dashboard · real-time</div>
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">
+            <span class="badge badge-blue" style="font-size:0.72rem">📱 Telegram</span>
+            <span class="badge badge-green" style="font-size:0.72rem">💻 Webchat</span>
+            <span class="badge badge-yellow" style="font-size:0.72rem">🎯 Dashboard</span>
+            <span style="margin-left:auto;font-size:0.75rem;color:var(--text3)">${msgs.length} messages</span>
+        </div>
+        <div id="msg-feed" class="msg-feed">
+            ${msgs.length
+                ? msgs.map(_renderMsgBubble).join("")
+                : `<div class="msg-empty">
+                       <div style="font-size:2.5rem;margin-bottom:8px">💬</div>
+                       <div style="font-weight:600">No messages yet</div>
+                       <div style="font-size:0.8rem;color:var(--text3);margin-top:4px">Send a message below — it syncs to Telegram and gets an agent reply</div>
+                   </div>`}
+        </div>
+        <div class="msg-compose">
+            <input id="msg-input" class="msg-input" type="text" placeholder="Send a message to Milfred (syncs to Telegram)…" autocomplete="off">
+            <button id="msg-send" class="btn btn-primary" style="flex-shrink:0">Send</button>
+        </div>`;
+}
+
+function initMessagesPanel(data, container) {
+    const feed = container.querySelector("#msg-feed");
+    if (feed) feed.scrollTop = feed.scrollHeight;
+
+    const input = container.querySelector("#msg-input");
+    const btn   = container.querySelector("#msg-send");
+    if (!input || !btn) return;
+
+    async function sendMsg() {
+        const text = input.value.trim();
+        if (!text) return;
+        input.value = "";
+        btn.disabled = true;
+        try {
+            await apiPost("chat/ingest", {
+                source_channel: "dashboard",
+                source_msg_id:  String(Date.now()),
+                user_name:      "Alex",
+                content:        text,
+            });
+        } catch(e) {
+            alert("Send failed: " + e.message);
+        } finally {
+            btn.disabled = false;
+            input.focus();
+        }
+    }
+
+    btn.addEventListener("click", sendMsg);
+    input.addEventListener("keydown", e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMsg(); } });
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // Calendar — Visual Cron Manager
 // ──────────────────────────────────────────────────────────────────────────────
 function renderCalendar(d) {
@@ -1518,7 +1710,7 @@ function renderCalendar(d) {
                 const catCls = job.category === "security" ? "cal-job-security" :
                                job.category === "trading"  ? "cal-job-trading"  : "cal-job-system";
                 const label = job.is_repeating ? `↻ ${job.name}` : job.name;
-                blocks += `<div class="cal-job-block ${catCls}" data-job-id="${job.id}" title="${escHtml(job.schedule + ' ' + job.command)}">${escHtml(label)}</div>`;
+                blocks += `<div class="cal-job-block ${catCls}" data-job-id="${job.id}" title="${escHtml(job.schedule + ' ' + job.command)}" draggable="true">${escHtml(label)}</div>`;
             });
 
             let nowLine = "";
@@ -1527,7 +1719,7 @@ function renderCalendar(d) {
                 nowLine = `<div class="cal-now-line" style="top:${pct}%;"></div>`;
             }
 
-            rows += `<div class="cal-cell">${blocks}${nowLine}</div>`;
+            rows += `<div class="cal-cell" data-hour="${h}">${blocks}${nowLine}</div>`;
         }
     }
 
@@ -1604,44 +1796,114 @@ function initCalendarPanel(data, container) {
         });
     });
 
+    // Drag-and-drop rescheduling
+    let _dragJobId = null;
+    container.querySelectorAll(".cal-job-block").forEach(block => {
+        block.addEventListener("dragstart", e => {
+            _dragJobId = parseInt(block.dataset.jobId);
+            e.dataTransfer.effectAllowed = "move";
+        });
+        block.addEventListener("dragend", () => { _dragJobId = null; });
+    });
+    container.querySelectorAll(".cal-cell").forEach(cell => {
+        cell.addEventListener("dragover", e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            cell.classList.add("cal-cell-drop");
+        });
+        cell.addEventListener("dragleave", () => cell.classList.remove("cal-cell-drop"));
+        cell.addEventListener("drop", async e => {
+            e.preventDefault();
+            cell.classList.remove("cal-cell-drop");
+            if (_dragJobId === null) return;
+            const newHour = parseInt(cell.dataset.hour);
+            const job = (data.cron_jobs || []).find(j => j.id === _dragJobId);
+            if (!job || isNaN(newHour)) return;
+            const newSchedule = `${job.minute} ${newHour} * * *`;
+            try {
+                await apiPut("cron", { id: job.id, schedule: newSchedule, command: job.command });
+                loadPanel("calendar");
+            } catch(err) {
+                alert("Failed to reschedule: " + err.message);
+            }
+            _dragJobId = null;
+        });
+    });
+
     // Add job button
     container.querySelector("#cal-add-job")?.addEventListener("click", () => showCronModal(null, null));
+
+    _refreshCronApprovalBadge();
+}
+
+async function _refreshCronApprovalBadge() {
+    try {
+        const resp = await fetch(`${API}/cron/approvals`);
+        const json = await resp.json();
+        const count = (json.data?.approvals || []).length;
+        const badge = document.getElementById("cron-approval-badge");
+        if (badge) { badge.textContent = count; badge.style.display = count > 0 ? "" : "none"; }
+    } catch(e) { /* silent */ }
 }
 
 function showCronModal(job, jobId) {
     const isEdit = jobId !== null && jobId !== undefined;
     const schedules = [
-        { label: "Every 5 min",  val: "*/5 * * * *" },
-        { label: "Every hour",   val: "0 * * * *" },
-        { label: "Daily 8 AM",   val: "0 8 * * *" },
-        { label: "Daily 9 AM",   val: "0 9 * * *" },
-        { label: "Daily midnight",val: "0 0 * * *" },
-        { label: "Custom",       val: "custom" },
+        { label: "Every 5 min",    val: "*/5 * * * *"  },
+        { label: "Every 15 min",   val: "*/15 * * * *" },
+        { label: "Every hour",     val: "0 * * * *"    },
+        { label: "Daily 8 AM",     val: "0 8 * * *"    },
+        { label: "Daily 9 AM",     val: "0 9 * * *"    },
+        { label: "Daily midnight", val: "0 0 * * *"    },
+        { label: "Custom",         val: "custom"        },
     ];
+    const categories = ["security","system","agent","trading","custom"];
     const currentSched = job?.schedule || "";
-    const isCustom     = !schedules.slice(0,-1).some(s => s.val === currentSched);
+    const isCustom     = !!currentSched && !schedules.slice(0,-1).some(s => s.val === currentSched);
 
     const modal = createModal({
-        title: isEdit ? "Edit Cron Job" : "New Cron Job",
+        title: isEdit ? `✏️ Edit: ${escHtml(job.name || "Cron Job")}` : "➕ New Cron Job",
         body: `
-            <div class="form-field"><label class="form-label">Frequency</label>
-                <select class="form-select" id="cron-freq">
-                    ${schedules.map(s => `<option value="${s.val}"${currentSched===s.val||(!isCustom&&s.val==="custom"&&isCustom)?" selected":""}>${s.label}</option>`).join("")}
-                </select></div>
-            <div class="form-field" id="cron-custom-wrap" style="${isCustom?"":"display:none"}">
-                <label class="form-label">Custom Schedule (cron expr)</label>
-                <input class="form-input" id="cron-custom" value="${escHtml(isCustom ? currentSched : "")}" placeholder="*/5 * * * *" style="font-family:monospace">
+            <div class="form-field">
+                <label class="form-label">Name <span style="color:#f87171">*</span></label>
+                <input class="form-input" id="cron-name" value="${escHtml(job?.name||"")}" placeholder="e.g. Daily Security Audit">
             </div>
-            <div class="form-field"><label class="form-label">Command</label>
-                <textarea class="form-textarea" id="cron-cmd" placeholder="/bin/bash ~/scripts/my-script.sh" style="font-family:monospace;min-height:60px">${escHtml(job?.command||"")}</textarea></div>`,
+            <div class="form-field">
+                <label class="form-label">Category</label>
+                <select class="form-select" id="cron-cat">
+                    ${categories.map(c => `<option value="${c}"${(job?.category||"custom")===c?" selected":""}>${c.charAt(0).toUpperCase()+c.slice(1)}</option>`).join("")}
+                </select>
+            </div>
+            <div class="form-field">
+                <label class="form-label">Frequency</label>
+                <select class="form-select" id="cron-freq">
+                    ${schedules.map(s => `<option value="${s.val}"${currentSched===s.val?" selected":""}>${s.label}</option>`).join("")}
+                </select>
+            </div>
+            <div class="form-field" id="cron-custom-wrap" style="${isCustom?"":"display:none"}">
+                <label class="form-label">Custom Schedule</label>
+                <input class="form-input" id="cron-custom" value="${escHtml(isCustom?currentSched:"")}" placeholder="*/5 * * * *" style="font-family:monospace">
+            </div>
+            <div class="form-field">
+                <label class="form-label">Command <span style="color:#f87171">*</span></label>
+                <textarea class="form-textarea" id="cron-cmd" placeholder="/bin/bash ~/.openclaw/scripts/my-script.sh" style="font-family:monospace;min-height:60px">${escHtml(job?.command||"")}</textarea>
+            </div>
+            <div class="form-field">
+                <label class="form-label">Description</label>
+                <input class="form-input" id="cron-desc" value="${escHtml(job?.description||"")}" placeholder="What does this job do?">
+            </div>
+            ${!isEdit ? `<div style="padding:8px 12px;background:rgba(251,191,36,0.1);border:1px solid rgba(251,191,36,0.3);border-radius:6px;font-size:0.8rem;color:#fbbf24;margin-top:8px">
+                ⚠️ New cron jobs require <strong>Milfred approval</strong> before activation.
+            </div>` : ""}`,
         footer: `
-            ${isEdit ? `<button class="btn btn-danger" id="cron-delete">Delete</button>` : ""}
+            ${isEdit ? `<button class="btn btn-danger" id="cron-delete">🗑 Delete</button>` : ""}
             <button class="btn btn-ghost" id="cron-cancel">Cancel</button>
-            <button class="btn btn-primary" id="cron-save">Save</button>`,
+            <button class="btn btn-primary" id="cron-save">${isEdit ? "Save Changes" : "Submit for Approval"}</button>`,
     });
 
-    const freqSel = modal.querySelector("#cron-freq");
+    const freqSel    = modal.querySelector("#cron-freq");
     const customWrap = modal.querySelector("#cron-custom-wrap");
+    if (isCustom) { freqSel.value = "custom"; customWrap.style.display = ""; }
     freqSel.addEventListener("change", () => {
         customWrap.style.display = freqSel.value === "custom" ? "" : "none";
     });
@@ -1650,26 +1912,48 @@ function showCronModal(job, jobId) {
 
     if (isEdit) {
         modal.querySelector("#cron-delete").onclick = async () => {
-            if (!confirm("Delete this cron job?")) return;
-            try { await apiDelete(`cron/${jobId}`); modal.remove(); loadPanel("calendar"); }
-            catch(e) { alert("Delete failed: " + e.message); }
+            if (!confirm(`Delete cron job "${job.name || jobId}"?`)) return;
+            try {
+                await apiDelete(`cron/${jobId}`);
+                modal.remove();
+                loadPanel("calendar");
+                if (typeof showToast === "function") showToast("🗑 Cron job deleted", "info");
+            } catch(e) { alert("Delete failed: " + e.message); }
         };
     }
 
     modal.querySelector("#cron-save").onclick = async () => {
-        const freq = freqSel.value;
-        const schedule = freq === "custom" ? modal.querySelector("#cron-custom").value.trim() : freq;
+        const name     = modal.querySelector("#cron-name").value.trim();
+        const freq     = freqSel.value;
+        const schedule = freq === "custom" ? (modal.querySelector("#cron-custom")?.value.trim() || "") : freq;
         const command  = modal.querySelector("#cron-cmd").value.trim();
-        if (!schedule || !command) return;
+        const category = modal.querySelector("#cron-cat").value;
+        const desc     = modal.querySelector("#cron-desc").value.trim();
+
+        if (!name)     { alert("Name is required"); return; }
+        if (!schedule) { alert("Schedule is required"); return; }
+        if (!command)  { alert("Command is required"); return; }
+
         const saveBtn = modal.querySelector("#cron-save");
-        saveBtn.disabled = true; saveBtn.textContent = "Saving…";
+        saveBtn.disabled = true;
+        saveBtn.textContent = isEdit ? "Saving…" : "Submitting…";
+
         try {
-            await apiPut("cron", { id: isEdit ? jobId : undefined, schedule, command });
-            modal.remove();
-            loadPanel("calendar");
+            if (isEdit) {
+                await apiPut("cron", { id: jobId, schedule, command });
+                modal.remove();
+                loadPanel("calendar");
+                if (typeof showToast === "function") showToast("✅ Cron job updated", "success");
+            } else {
+                await apiPost("cron/approvals", { name, schedule, command, category, description: desc, requested_by: "Alex" });
+                modal.remove();
+                if (typeof showToast === "function") showToast("📋 Submitted for Milfred approval", "info");
+                _refreshCronApprovalBadge();
+            }
         } catch(e) {
-            saveBtn.disabled = false; saveBtn.textContent = "Save";
-            alert("Save failed: " + e.message);
+            saveBtn.disabled = false;
+            saveBtn.textContent = isEdit ? "Save Changes" : "Submit for Approval";
+            alert("Failed: " + e.message);
         }
     };
 }
@@ -2078,7 +2362,8 @@ function _miniTimelineBarHtml(task) {
 
 const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex"];
 const TASK_STATUSES  = [
-    { value: "todo",        label: "Not Started" },
+    { value: "not_started", label: "Not Started" },
+    { value: "todo",        label: "To Do"       },
     { value: "in_progress", label: "In Progress" },
     { value: "done",        label: "Done"        },
 ];
@@ -2120,6 +2405,7 @@ async function renderProjectDetail(project) {
         if (!viewBody) return;
 
         const allTasks = [
+            ...(tasksData.not_started || []),
             ...(tasksData.todo        || []),
             ...(tasksData.in_progress || []),
             ...(tasksData.done        || []),
@@ -2312,7 +2598,7 @@ function initTaskListInteractions(tasks, project) {
             try {
                 const newTask = await apiPost("tasks", {
                     title: "New subtask",
-                    status: "todo",
+                    status: "not_started",
                     project: project.name,
                     parent_id: parentId,
                 });
@@ -2365,7 +2651,7 @@ function initTaskListInteractions(tasks, project) {
         try {
             const newTask = await apiPost("tasks", {
                 title: "New task",
-                status: "todo",
+                status: "not_started",
                 project: project.name,
             });
             _taskViewTasks = [..._taskViewTasks, newTask];
@@ -5528,9 +5814,10 @@ const PANELS = {
     tasks:     { fn: renderTasks,     endpoint: "tasks",    init: initTasksPanel   },
     agents:    { fn: renderAgents,    endpoint: "agents",   init: initAgentsPanel  },
     content:   { fn: renderContent,   endpoint: "content"                          },
-    approvals: { fn: renderApprovals, endpoint: "approvals"                        },
+    approvals: { fn: renderApprovals, endpoint: "approvals", init: initApprovalsPanel },
     council:   { fn: renderCouncil,   endpoint: "council",  init: initCouncilPanel },
     calendar:  { fn: renderCalendar,  endpoint: "calendar", init: initCalendarPanel},
+    messages:  { fn: renderMessages,  endpoint: "chat/feed", init: initMessagesPanel},
     projects:  { fn: renderProjects,  endpoint: "projects", init: initProjectsPanel },
     memory:    { fn: renderMemory,    endpoint: "memory"                           },
     docs:      { fn: renderDocs,      endpoint: "docs"                             },
@@ -5557,6 +5844,10 @@ function navigate(panelId) {
         el.classList.toggle("active", el.id === `panel-${panelId}`);
     });
     loadPanel(panelId);
+    if (panelId === "messages") {
+        const b = document.getElementById("msg-nav-badge");
+        if (b) { b.style.display = "none"; b.dataset.count = "0"; }
+    }
 }
 
 async function loadPanel(panelId) {

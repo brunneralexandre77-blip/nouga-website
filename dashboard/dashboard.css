@@ -987,6 +987,9 @@ body {
     transition: opacity 0.15s, filter 0.15s;
 }
 .cal-job-block:hover { opacity: 0.8; filter: brightness(1.2); }
+.cal-job-block[draggable="true"] { cursor: grab; }
+.cal-job-block[draggable="true"]:active { cursor: grabbing; }
+.cal-cell-drop { background: rgba(99,102,241,0.15) !important; outline: 1px dashed rgba(99,102,241,0.5); }
 .cal-job-security { background: rgba(239,68,68,0.28); color: #f87171; }
 .cal-job-system   { background: rgba(59,130,246,0.28); color: #60a5fa; }
 .cal-job-trading  { background: rgba(16,185,129,0.28); color: #34d399; }
@@ -2640,3 +2643,69 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
     border-radius: 6px;
     outline: 1px dashed var(--border, #333);
 }
+
+/* ── Message Sync Panel ─────────────────────────────────────────────────────── */
+.msg-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    max-height: calc(100vh - 220px);
+    padding: 4px 2px;
+}
+.msg-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 60px 20px;
+    color: var(--text3, #666);
+    font-size: 0.9rem;
+    text-align: center;
+}
+.msg-bubble-wrap { display: flex; flex-direction: column; gap: 6px; }
+.msg-bubble {
+    border-radius: 10px;
+    padding: 10px 14px;
+    max-width: 85%;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+.msg-bubble-user {
+    background: var(--bg2, #1a1a2e);
+    border: 1px solid var(--border1, #2a2a40);
+    border-left: 3px solid #3b82f6;
+    align-self: flex-start;
+}
+.msg-bubble-agent {
+    background: var(--bg3, #0f172a);
+    border: 1px solid var(--border1, #2a2a40);
+    border-left: 3px solid #22c55e;
+    align-self: flex-end;
+    margin-left: auto;
+}
+.msg-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+}
+.msg-channel-badge {
+    font-size: 0.7rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+}
+.msg-ch-telegram  { background: rgba(0,136,204,0.2);  color: #38bdf8; }
+.msg-ch-webchat   { background: rgba(34,197,94,0.2);  color: #4ade80; }
+.msg-ch-dashboard { background: rgba(249,115,22,0.2); color: #fb923c; }
+.msg-user  { font-weight: 600; font-size: 0.8rem; color: var(--text1, #e2e8f0); }
+.msg-agent-label { font-weight: 600; font-size: 0.8rem; color: #4ade80; }
+.msg-ts    { font-size: 0.72rem; color: var(--text3, #666); margin-left: auto; }
+.msg-text  { color: var(--text2, #94a3b8); white-space: pre-wrap; word-break: break-word; }
+.msg-compose { display: flex; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.06); }
+.msg-input { flex: 1; background: var(--bg3,#1e2130); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 9px 14px; color: var(--text1,#e2e8f0); font-size: 0.875rem; outline: none; }
+.msg-input:focus { border-color: rgba(99,102,241,0.5); }
+.msg-input::placeholder { color: var(--text3,#666); }
