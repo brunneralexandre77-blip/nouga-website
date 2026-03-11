@@ -470,7 +470,7 @@ let _taskAgentFilter = "all";
 
 function renderTasks(d) {
     _tasksData = d;
-    const FILTER_AGENTS = ["all","Milfred","Ernst","Gordon","Lara","Claude","Eva","Alex","Council","Herzog","Oak"];
+    const FILTER_AGENTS = ["all","Milfred","Ernst","Gordon","Lara","Claude","Eva","Alex","Herzog","Hawk","Oak"];
     const filterBar = `
         <div class="task-filter-bar">
             ${FILTER_AGENTS.map(a => `
@@ -2070,7 +2070,7 @@ function _miniTimelineBarHtml(task) {
     </div>`;
 }
 
-const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex", "Herzog", "Oak", "Council"];
+const TASK_ASSIGNEES = ["Milfred", "Claude", "Lara", "Gordon", "Ernst", "Eva", "Alex", "Herzog", "Hawk", "Oak"];
 const TASK_STATUSES  = [
     { value: "todo",        label: "Not Started" },
     { value: "in_progress", label: "In Progress" },
@@ -2606,8 +2606,8 @@ function initOfficePanel(data, container) {
             { x:  16, y: 232, agent: "claude"  },
             { x: 136, y: 232, agent: "eva"     },
             { x: 256, y: 232, agent: "alex"    },
-            { x: 376, y: 232, agent: "oak"     },
-            { x: 496, y: 232, agent: "council" },
+            { x: 376, y: 232, agent: "hawk"    },
+            { x: 496, y: 232, agent: "oak"     },
         ],
         coffee:  { x: 268, y: 350, w: 240, h: 90 },
         meeting: { x: 14,  y: 226, w: 160, h: 152 },
@@ -2619,10 +2619,10 @@ function initOfficePanel(data, container) {
     const SCREEN_COLORS = {
         milfred:"#00ff88", ernst:"#ff4444", gordon:"#ffaa00",
         lara:"#ff44cc", claude:"#00ccff", eva:"#cc88ff", alex:"#4488ff",
-        herzog:"#0891b2", oak:"#8B4513", council:"#FFD700",
+        herzog:"#0891b2", hawk:"#DC143C", oak:"#8B4513",
     };
 
-    const AGENT_EMOJI  = { alex:"👔", eva:"📅", milfred:"🤖", ernst:"🔒", gordon:"📈", lara:"📱", claude:"🧠", herzog:"🏗️", oak:"🌳", council:"🏛️" };
+    const AGENT_EMOJI  = { alex:"👔", eva:"📅", milfred:"🤖", ernst:"🔒", gordon:"📈", lara:"📱", claude:"🧠", herzog:"🏗️", hawk:"🦅", oak:"🌳" };
     const AGENT_PROPS  = {
         milfred: { accessory:"clipboard" },
         eva:     { accessory:"headset"   },
@@ -2652,8 +2652,8 @@ function initOfficePanel(data, container) {
         { id:"claude",  name:"Claude",  role:"AI Architect",  shirtC:"#ea580c", hairC:"#555",    skinC:"#c68642", hx:ZONES.lowerDesks[0].x+30, hy:HY_LOW, speed:1.20 },
         { id:"eva",     name:"Eva",     role:"Exec. Asst.",   shirtC:"#7c3aed", hairC:"#8B4513", skinC:"#f1c27d", hx:ZONES.lowerDesks[1].x+30, hy:HY_LOW, speed:1.00, female:true },
         { id:"alex",    name:"Alex",    role:"CEO",           shirtC:"#1d4ed8", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[2].x+30, hy:HY_LOW, speed:0.90 },
-        { id:"oak",     name:"Oak",     role:"Advisor",       shirtC:"#8B4513", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.lowerDesks[3].x+30, hy:HY_LOW, speed:0.85 },
-        { id:"council", name:"Council", role:"Multi-Agent",   shirtC:"#FFD700", hairC:"#333",    skinC:"#c68642", hx:ZONES.lowerDesks[4].x+30, hy:HY_LOW, speed:1.30 },
+        { id:"hawk",    name:"Hawk",    role:"Quality Lead",  shirtC:"#DC143C", hairC:"#222",    skinC:"#c68642", hx:ZONES.lowerDesks[3].x+30, hy:HY_LOW, speed:1.00 },
+        { id:"oak",     name:"Oak",     role:"Advisor",       shirtC:"#8B4513", hairC:"#4a3728", skinC:"#c68642", hx:ZONES.lowerDesks[4].x+30, hy:HY_LOW, speed:0.85 },
     ];
     // Build status map from API data (keyed by agent id, lowercase)
     const statusMap = {};
