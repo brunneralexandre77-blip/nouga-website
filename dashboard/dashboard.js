@@ -5,7 +5,7 @@
 // Allow local-dev override: in browser console run:
 //   localStorage.setItem('NOUGA_API_HOST', 'http://localhost:5001')
 // then reload. Clear with: localStorage.removeItem('NOUGA_API_HOST')
-const API_HOST = localStorage.getItem('NOUGA_API_HOST') || "https://api.nouga.ai";
+const API_HOST = "https://api.nouga.ai";
 const API    = `${API_HOST}/api`;
 const WS_URL = API_HOST;
 
