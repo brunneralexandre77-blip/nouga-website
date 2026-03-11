@@ -2107,24 +2107,33 @@ async function renderProjectDetail(project) {
     _taskViewProject = project;
 
     try {
-        const tasksData = await fetchData("tasks");
-        if (_detailRenderToken !== renderToken) return;
+        let tasks = [];
+        
+        // If project has db_id, use the dedicated project tasks endpoint
+        if (project.db_id) {
+            const projTasksData = await fetchData(`projects/${project.db_id}/tasks`);
+            tasks = projTasksData.tasks || [];
+        } else {
+            // Fallback: fetch all tasks and filter by tag/project name
+            const tasksData = await fetchData("tasks");
+            if (_detailRenderToken !== renderToken) return;
 
-        const viewBody = $("task-view-body");
-        if (!viewBody) return;
+            const viewBody = $("task-view-body");
+            if (!viewBody) return;
 
-        const allTasks = [
-            ...(tasksData.todo        || []),
-            ...(tasksData.in_progress || []),
-            ...(tasksData.done        || []),
-        ];
-        const projKey = project.name.toLowerCase();
-        const tasks = allTasks.filter(t => {
-            const tag  = (t.tag     || "").toLowerCase().replace(/^#/, "");
-            const proj = (t.project || "").toLowerCase();
-            return (tag  && (tag.includes(projKey)  || projKey.includes(tag)))
-                || (proj && (proj.includes(projKey) || projKey.includes(proj)));
-        });
+            const allTasks = [
+                ...(tasksData.todo        || []),
+                ...(tasksData.in_progress || []),
+                ...(tasksData.done        || []),
+            ];
+            const projKey = project.name.toLowerCase();
+            tasks = allTasks.filter(t => {
+                const tag  = (t.tag     || "").toLowerCase().replace(/^#/, "");
+                const proj = (t.project || "").toLowerCase();
+                return (tag  && (tag.includes(projKey)  || projKey.includes(tag)))
+                    || (proj && (proj.includes(projKey) || projKey.includes(proj)));
+            });
+        }
 
         _taskViewTasks = tasks;
         renderTaskList(tasks, project);
