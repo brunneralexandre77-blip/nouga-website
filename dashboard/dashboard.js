@@ -2608,12 +2608,12 @@ function initOfficePanel(data, container) {
             { x: 328, y: 232, agent: "alex"    },
             { x: 448, y: 232, agent: "hawk"    },
         ],
-        coffee:  { x: 268, y: 226, w: 240, h: 152 },
-        meeting: { x: 14,  y: 226, w: 160, h: 152 },
+        coffee:  { x: 268, y: 400, w: 240, h: 152 },
+        meeting: { x: 14,  y: 400, w: 160, h: 152 },
     };
     // Coffee machine position inside the break room zone
     const CM_X = ZONES.coffee.x + 88;   // x=356
-    const CM_Y = ZONES.coffee.y + 20;   // y=246
+    const CM_Y = ZONES.coffee.y + 20;   // y=420
 
     const SCREEN_COLORS = {
         milfred:"#00ff88", ernst:"#ff4444", gordon:"#ffaa00",
@@ -2630,6 +2630,8 @@ function initOfficePanel(data, container) {
         lara:    { accessory:"phone"     },
         claude:  { accessory:"headphones"},
         alex:    { accessory:"tie"       },
+        herzog:  { accessory:"wrench"    },
+        hawk:    { accessory:"badge"     },
     };
     const AGENT_ACTS   = {
         milfred: ["Reviewing PR #42","Debugging canvas render","Planning Sprint 8","Merging feature branch"],
@@ -2639,6 +2641,8 @@ function initOfficePanel(data, container) {
         claude:  ["AI pipeline design","Architecture review","WebSocket refactor","Memory schema"],
         eva:     ["CEO briefing ready","14:00 confirmed","Routing 3 tasks","Calendar updated"],
         alex:    ["Strategy review","Reading reports","Investor update","Team 1:1 prep"],
+        herzog:  ["Deploying containers","Monitoring uptime","Optimizing performance","CI/CD pipeline"],
+        hawk:    ["Code review","Security audit","Architecture review","Standards compliance"],
     };
 
     // ── Agent state ───────────────────────────────────────────────
