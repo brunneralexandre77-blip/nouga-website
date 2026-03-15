@@ -2715,14 +2715,77 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
 .ah-queue-wrap.open { display: block; }
 .ah-queue-row:hover { background: rgba(255,255,255,0.03); }
 
-.sidebar-dragging {
-    opacity: 0.4;
+/* ── Sidebar drag-and-drop ── */
+
+/* Section label: flex row so grip sits on the right */
+.sidebar-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.sidebar-label-text {
+    flex: 1;
+}
+.sidebar-label-grip {
+    opacity: 0;
+    cursor: grab;
+    font-size: 0.75rem;
+    color: var(--text3);
+    padding: 0 2px;
+    transition: opacity 0.15s;
+    line-height: 1;
+}
+.sidebar-label:hover .sidebar-label-grip { opacity: 1; }
+.sidebar-label-grip:active { cursor: grabbing; }
+
+/* Nav item drag handle — appears on hover, sits after the label text */
+.nav-drag-handle {
+    margin-left: auto;
+    opacity: 0;
+    cursor: grab;
+    font-size: 0.72rem;
+    color: var(--text3);
+    padding: 0 2px;
+    transition: opacity 0.12s;
+    flex-shrink: 0;
+    line-height: 1;
+}
+.nav-item:hover .nav-drag-handle { opacity: 0.7; }
+.nav-item:hover .nav-drag-handle:hover { opacity: 1; color: var(--text2); }
+.nav-drag-handle:active { cursor: grabbing; }
+
+/* Hide handle when nav-badge is also showing so they don't clash */
+.nav-item .nav-badge ~ .nav-drag-handle { display: none; }
+.nav-item:hover .nav-badge ~ .nav-drag-handle { display: inline; }
+
+/* Ghost / dragging states */
+.nav-item-ghost {
+    opacity: 0.25;
+    background: rgba(14,165,233,0.06) !important;
+    border-radius: var(--radius-sm);
+}
+.nav-item-chosen {
+    background: rgba(255,255,255,0.05) !important;
+}
+.nav-item-dragging {
+    opacity: 0.5;
 }
 
-.sidebar-drag-over {
-    background: var(--bg3, #2a2a3e);
-    border-radius: 6px;
-    outline: 1px dashed var(--border, #333);
+/* Section being dragged */
+.sidebar-section-dragging {
+    opacity: 0.5;
+}
+.sidebar-section-drag {
+    background: rgba(14,165,233,0.05);
+    border-radius: var(--radius-sm);
+    outline: 1px dashed rgba(14,165,233,0.25);
+}
+
+/* Drop zone highlight when hovering a section with an item */
+.sidebar-section.sortable-drag-over {
+    background: rgba(14,165,233,0.04);
+    border-radius: var(--radius-sm);
+    outline: 1px dashed rgba(14,165,233,0.2);
 }
 
 /* ── Message Sync Panel ─────────────────────────────────────────────────────── */

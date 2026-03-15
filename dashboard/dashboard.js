@@ -5885,34 +5885,66 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    // Draggable sidebar sections (Task 5)
+    // Draggable sidebar — two levels: sections + individual items
     (function initDraggableSidebar() {
         const sidebar = document.querySelector(".sidebar");
         if (!sidebar || typeof Sortable === "undefined") return;
-        const sections = sidebar.querySelectorAll(".sidebar-section");
-        sections.forEach(s => {
-            const lbl = s.querySelector(".sidebar-label");
-            if (lbl) { lbl.style.cursor = "grab"; lbl.title = "Drag to reorder"; }
-        });
+
+        function saveSidebarOrder() {
+            const state = [...sidebar.querySelectorAll(".sidebar-section")].map(sec => ({
+                label: sec.querySelector(".sidebar-label-text")?.textContent.trim(),
+                items: [...sec.querySelectorAll(".nav-item")].map(el => el.dataset.panel)
+            }));
+            localStorage.setItem("_sidebarOrderV2", JSON.stringify(state));
+        }
+
+        // Level 1: section reordering via grip on the label
         Sortable.create(sidebar, {
-            animation: 150,
-            handle: ".sidebar-label",
+            animation: 180,
+            handle: ".sidebar-label-grip",
+            filter: ".nav-item",
             ghostClass: "sortable-ghost",
-            onEnd() {
-                const order = [...sidebar.querySelectorAll(".sidebar-label")].map(l => l.textContent.trim());
-                localStorage.setItem("_sidebarOrder", JSON.stringify(order));
-            }
+            chosenClass: "sidebar-section-dragging",
+            dragClass:   "sidebar-section-drag",
+            onEnd: saveSidebarOrder
         });
+
+        // Level 2: item reordering within + across sections
+        sidebar.querySelectorAll(".sidebar-section").forEach(section => {
+            Sortable.create(section, {
+                animation: 150,
+                handle: ".nav-drag-handle",
+                group: { name: "sidebar-items", pull: true, put: true },
+                filter: ".sidebar-label",
+                ghostClass: "nav-item-ghost",
+                chosenClass: "nav-item-chosen",
+                dragClass:   "nav-item-dragging",
+                onEnd: saveSidebarOrder
+            });
+        });
+
         // Restore saved order
         try {
-            const saved = JSON.parse(localStorage.getItem("_sidebarOrder") || "null");
-            if (saved) {
-                saved.forEach(label => {
-                    const sec = [...sidebar.querySelectorAll(".sidebar-section")].find(s => s.querySelector(".sidebar-label")?.textContent.trim() === label);
-                    if (sec) sidebar.appendChild(sec);
+            const saved = JSON.parse(localStorage.getItem("_sidebarOrderV2") || "null");
+            if (!saved) return;
+            // Restore section order first
+            saved.forEach(({ label }) => {
+                const sec = [...sidebar.querySelectorAll(".sidebar-section")]
+                    .find(s => s.querySelector(".sidebar-label-text")?.textContent.trim() === label);
+                if (sec) sidebar.appendChild(sec);
+            });
+            // Then restore item order within each section
+            saved.forEach(({ label, items }) => {
+                if (!items) return;
+                const sec = [...sidebar.querySelectorAll(".sidebar-section")]
+                    .find(s => s.querySelector(".sidebar-label-text")?.textContent.trim() === label);
+                if (!sec) return;
+                items.forEach(panel => {
+                    const el = sidebar.querySelector(`.nav-item[data-panel="${panel}"]`);
+                    if (el) sec.appendChild(el);
                 });
-            }
-        } catch {}
+            });
+        } catch { /* bad localStorage, ignore */ }
     })();
 
     navigate("tasks");
