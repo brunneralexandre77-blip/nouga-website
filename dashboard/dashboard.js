@@ -4107,49 +4107,54 @@ const SKILLS_DATA = {
     ],
 };
 
-function renderSkills() {
+function renderSkills(d) {
+    const sys = (d && d.system) || SKILLS_DATA.system.map(s => ({...s, display_name: s.name}));
+    const agts = (d && d.agents) || SKILLS_DATA.agents;
+    const pend = (d && d.pending) || SKILLS_DATA.pending;
     const priorityColor = p => p === "high" ? "red" : p === "medium" ? "yellow" : "gray";
 
-    const systemRows = SKILLS_DATA.system.map(s => `
-        <div class="service-row">
+    const systemRows = sys.map(s => `
+        <div class="service-row skill-row" data-skill="${escHtml(s.name)}">
             <div class="service-left">
-                <span style="font-size:1.2rem">${s.icon}</span>
+                <span style="font-size:1.2rem">${s.icon || "🧩"}</span>
                 <div>
-                    <div class="service-name">${escHtml(s.name)}</div>
-                    <div class="service-port">${escHtml(s.desc)}</div>
+                    <div class="service-name">${escHtml(s.display_name || s.name)}</div>
+                    <div class="service-port">${escHtml(s.desc || s.location || "")}</div>
                 </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
-                <span style="font-size:0.75rem;color:var(--text3)">${escHtml(s.usedBy)}</span>
+                <span style="font-size:0.75rem;color:var(--text3)">${escHtml(s.used_by || s.usedBy || "")}</span>
+                ${s.command_count ? `<span style="font-size:0.7rem;color:var(--text3);font-family:monospace">${s.command_count} cmds</span>` : ""}
                 ${badge("active", "green")}
             </div>
         </div>`).join("");
 
-    const agentRows = SKILLS_DATA.agents.map(a => `
+    const agentRows = agts.map(a => `
         <div class="service-row" style="align-items:flex-start;padding:10px 0">
             <div class="service-left" style="align-items:flex-start">
-                <span style="font-size:1.2rem;margin-top:2px">${a.icon}</span>
+                <span style="font-size:1.2rem;margin-top:2px">${a.icon || "👤"}</span>
                 <div>
                     <div class="service-name">${escHtml(a.name)}</div>
                     <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:5px">
-                        ${a.skills.map(sk => `<span style="background:var(--bg3,#222236);border:1px solid var(--border,#333);border-radius:4px;padding:2px 8px;font-size:0.72rem;color:var(--text2)">${escHtml(sk)}</span>`).join("")}
+                        ${(a.skill_labels || a.skills || []).map(sk => `<span style="background:var(--bg3,#222236);border:1px solid var(--border,#333);border-radius:4px;padding:2px 8px;font-size:0.72rem;color:var(--text2)">${escHtml(sk)}</span>`).join("")}
+                        ${!(a.skill_labels || a.skills || []).length ? `<span style="font-size:0.72rem;color:var(--text3);font-style:italic">no skills assigned</span>` : ""}
                     </div>
                 </div>
             </div>
         </div>`).join("");
 
-    const pendingRows = SKILLS_DATA.pending.map(s => `
+    const pendingRows = pend.map(s => `
         <div class="service-row">
             <div class="service-left">
-                <span style="font-size:1rem">📦</span>
+                <span style="font-size:1rem">${s.icon || "📦"}</span>
                 <div>
                     <div class="service-name">${escHtml(s.name)}</div>
-                    <div class="service-port">${escHtml(s.source)}</div>
+                    <div class="service-port">${escHtml(s.source || "")}</div>
                 </div>
             </div>
             <div style="display:flex;align-items:center;gap:8px">
                 ${badge(s.priority, priorityColor(s.priority))}
-                <button class="btn btn-ghost" style="padding:2px 8px;font-size:0.7rem;opacity:0.5;cursor:default" disabled>Install</button>
+                <button class="btn btn-ghost skill-install-btn" style="padding:2px 8px;font-size:0.7rem" data-skill="${escHtml(s.name)}">Queue</button>
             </div>
         </div>`).join("");
 
@@ -4160,28 +4165,31 @@ function renderSkills() {
         </div>
         <div class="grid-3" style="margin-bottom:16px">
             <div class="stat-card">
-                <div class="stat-label">System Skills</div>
-                <div class="stat-value">${SKILLS_DATA.system.length}</div>
+                <div class="stat-label">Installed Skills</div>
+                <div class="stat-value">${sys.length}</div>
                 <div class="stat-sub">all active</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Agents Equipped</div>
-                <div class="stat-value">${SKILLS_DATA.agents.length}</div>
+                <div class="stat-value">${agts.filter(a => (a.skill_labels || a.skills || []).length > 0).length}</div>
                 <div class="stat-sub">with assigned skills</div>
             </div>
             <div class="stat-card">
                 <div class="stat-label">Pending Installs</div>
-                <div class="stat-value">${SKILLS_DATA.pending.length}</div>
-                <div class="stat-sub">${SKILLS_DATA.pending.filter(s=>s.priority==="high").length} high priority</div>
+                <div class="stat-value">${pend.length}</div>
+                <div class="stat-sub">${pend.filter(s=>s.priority==="high").length} high priority</div>
             </div>
         </div>
         <div class="grid-2" style="margin-bottom:16px">
             <div class="card">
-                <div class="card-title">System Skills</div>
-                ${systemRows}
+                <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+                    <span>Installed Skills</span>
+                    <span style="font-size:0.72rem;color:var(--text3);font-weight:400">${sys.length} found</span>
+                </div>
+                <div id="skills-system-list">${systemRows}</div>
             </div>
             <div class="card">
-                <div class="card-title">Agent Skills</div>
+                <div class="card-title">Agent Assignments</div>
                 ${agentRows}
             </div>
         </div>
@@ -4191,7 +4199,7 @@ function renderSkills() {
                 ${pendingRows}
             </div>
         </div>
-        
+
         <!-- Hawk Code Review Section -->
         <div class="card" style="margin-top:16px;border-left:3px solid var(--green2)">
             <div class="card-title">🦅 Hawk Code Review</div>
@@ -4222,6 +4230,19 @@ function renderSkills() {
                 🦅 Submit Code for Review
             </button>
         </div>`;
+}
+
+function initSkillsPanel(data, el) {
+    // Wire "Queue" buttons on pending skills
+    el.querySelectorAll(".skill-install-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const name = btn.dataset.skill;
+            btn.textContent = "✓ Queued";
+            btn.disabled = true;
+            btn.style.color = "var(--green2)";
+            showToast(`"${name}" added to install queue`);
+        });
+    });
 }
 
 function renderSystem(d) {
@@ -5469,7 +5490,7 @@ const PANELS = {
     office:    { fn: renderOffice,    endpoint: "office",   init: initOfficePanel  },
     team:      { fn: renderTeam,      endpoint: "team",    init: initTeamPanel     },
     system:    { fn: renderSystem,    endpoint: "system",   init: initSystemPanel  },
-    skills:    { fn: renderSkills,    endpoint: null                               },
+    skills:    { fn: renderSkills,    endpoint: "skills", init: initSkillsPanel    },
     radar:     { fn: renderRadar,     endpoint: "radar"                            },
     factory:   { fn: renderFactory,   endpoint: "factory",  init: initFactoryPanel },
     pipeline:  { fn: renderPipeline,  endpoint: "pipeline"                         },
