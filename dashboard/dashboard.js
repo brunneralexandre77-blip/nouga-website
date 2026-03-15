@@ -984,6 +984,10 @@ function renderAgents(d) {
                Click an agent node to view details, tools &amp; memory
            </div>`;
 
+    // ISO org chart: Alex → [Ernst, Milfred → [Gordon, Lara, Claude, Hawk, Herzog]]
+    const herzog = d.agents?.find(a=>a.id==="herzog");
+    const mReports = (d.agents||[]).filter(a=>["gordon","lara","claude","hawk","herzog"].includes(a.id));
+
     return `
         <div class="panel-header">
             <div class="panel-title">🤖 Agents</div>
@@ -993,35 +997,46 @@ function renderAgents(d) {
             <div>
                 <div class="card" style="margin-bottom:16px">
                     <div class="card-title">Org Chart</div>
-                    <div class="org-chart">
-                        <div class="org-level">
+                    <div class="org-chart" style="overflow-x:auto;padding-bottom:8px">
+                        <!-- Level 0: CEO -->
+                        <div style="display:flex;justify-content:center">
                             <button class="org-node-btn" data-agent-id="alex" style="border-color:var(--yellow);min-width:100px">
                                 <span class="org-emoji">👔</span><span class="org-name">Alex</span><span class="org-title">CEO</span>
                             </button>
                         </div>
-                        <div class="org-line-v"></div>
-                        <div class="org-children" style="gap:12px">
-                            ${milfred ? orgNode(milfred) : ""}
-                            ${ernst   ? orgNode(ernst)   : ""}
-                            ${eva     ? orgNode(eva)     : ""}
-                        </div>
-                        <div style="display:flex;flex-direction:column;align-items:flex-start;padding-left:8px">
-                            <div class="org-line-v"></div>
-                            <div class="org-children" style="gap:8px">
-                                ${reports.map(a=>orgNode(a)).join("")}
+                        <!-- Vertical stem from CEO -->
+                        <div style="display:flex;justify-content:center"><div style="width:2px;height:20px;background:var(--border2)"></div></div>
+                        <!-- Horizontal bar spanning Ernst + Milfred -->
+                        <div style="display:flex;justify-content:center;position:relative">
+                            <div style="display:flex;gap:48px;position:relative">
+                                <!-- Horizontal connector line -->
+                                <div style="position:absolute;top:0;left:50px;right:50px;height:2px;background:var(--border2)"></div>
+                                <!-- Level 1: Ernst (direct CEO report) -->
+                                <div style="display:flex;flex-direction:column;align-items:center">
+                                    <div style="width:2px;height:18px;background:var(--border2)"></div>
+                                    ${ernst ? orgNode(ernst) : ""}
+                                </div>
+                                <!-- Level 1: Milfred -->
+                                <div style="display:flex;flex-direction:column;align-items:center">
+                                    <div style="width:2px;height:18px;background:var(--border2)"></div>
+                                    ${milfred ? orgNode(milfred) : ""}
+                                    <!-- Vertical stem to Milfred's reports -->
+                                    <div style="width:2px;height:18px;background:var(--border2)"></div>
+                                    <!-- Level 2: Milfred's reports -->
+                                    <div style="position:relative">
+                                        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:var(--border2)"></div>
+                                        <div style="display:flex;gap:8px;padding-top:0">
+                                            ${mReports.map(a=>`
+                                                <div style="display:flex;flex-direction:column;align-items:center">
+                                                    <div style="width:2px;height:18px;background:var(--border2)"></div>
+                                                    ${orgNode(a)}
+                                                </div>`).join("")}
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-                <div class="card">
-                    <div class="card-title">Workflow Agents</div>
-                    <table class="table">
-                        <thead><tr><th>Category</th><th>Instances</th><th>Status</th></tr></thead>
-                        <tbody>
-                            ${Object.entries(d.workflow_counts||{}).map(([k,v])=>`
-                                <tr><td>${k}</td><td>${v}</td><td>${badge("ready","green")}</td></tr>`).join("")}
-                        </tbody>
-                    </table>
                 </div>
             </div>
             <div class="agent-detail-panel" id="agent-detail">${detailHTML}</div>
@@ -1523,7 +1538,7 @@ function renderCalendar(d) {
                 const catCls = job.category === "security" ? "cal-job-security" :
                                job.category === "trading"  ? "cal-job-trading"  : "cal-job-system";
                 const label = job.is_repeating ? `↻ ${job.name}` : job.name;
-                blocks += `<div class="cal-job-block ${catCls}" data-job-id="${job.id}" title="${escHtml(job.schedule + ' ' + job.command)}">${escHtml(label)}</div>`;
+                blocks += `<div class="cal-job-block ${catCls}" data-job-id="${job.id}" draggable="true" title="${escHtml(job.schedule + ' ' + job.command)}">${escHtml(label)}</div>`;
             });
 
             let nowLine = "";
@@ -1575,6 +1590,37 @@ function initCalendarPanel(data, container) {
             const jobId = parseInt(block.dataset.jobId);
             const job   = (data.cron_jobs || []).find(j => j.id === jobId);
             if (job) showCronModal(job, jobId);
+        });
+    });
+
+    // Drag-and-drop: move job to a new hour
+    let _dragJobId = null;
+    container.querySelectorAll(".cal-job-block[draggable='true']").forEach(block => {
+        block.addEventListener("dragstart", e => {
+            _dragJobId = parseInt(block.dataset.jobId);
+            block.style.opacity = "0.4";
+            e.dataTransfer.effectAllowed = "move";
+        });
+        block.addEventListener("dragend", () => { block.style.opacity = ""; });
+    });
+
+    container.querySelectorAll(".cal-cell").forEach((cell, idx) => {
+        const hour = Math.floor(idx / 7); // 7 day columns
+        cell.addEventListener("dragover", e => { e.preventDefault(); cell.classList.add("cal-cell-drop"); });
+        cell.addEventListener("dragleave", () => cell.classList.remove("cal-cell-drop"));
+        cell.addEventListener("drop", async e => {
+            e.preventDefault();
+            cell.classList.remove("cal-cell-drop");
+            if (_dragJobId === null) return;
+            const job = (data.cron_jobs || []).find(j => j.id === _dragJobId);
+            if (!job || job.is_repeating) return;
+            const newSchedule = `0 ${hour} * * *`;
+            try {
+                await apiPut(`cron/${_dragJobId}`, { schedule: newSchedule, command: job.command });
+                showToast(`✅ Moved to ${String(hour).padStart(2,"0")}:00`, "green");
+                loadPanel("calendar");
+            } catch(e) { showToast("❌ Failed to move job", "red"); }
+            _dragJobId = null;
         });
     });
 
@@ -3883,96 +3929,125 @@ function initOfficePanel(data, container) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Company (Mission, Vision, Strategy, Goals)
 // ──────────────────────────────────────────────────────────────────────────────
+function _companyField(key, label, value, multiline = true) {
+    const tag = multiline ? "textarea" : "input";
+    const inputHtml = multiline
+        ? `<textarea class="form-textarea co-field-input" data-key="${key}" style="min-height:80px;display:none">${escHtml(value||"")}</textarea>`
+        : `<input class="form-input co-field-input" data-key="${key}" value="${escHtml(value||"")}" style="display:none">`;
+    return `
+    <div class="co-field" data-key="${key}">
+        <div class="co-field-header">
+            <span class="card-title" style="margin-bottom:0">${label}</span>
+            <button class="btn btn-ghost co-edit-btn" data-key="${key}" style="padding:3px 10px;font-size:0.75rem">✏️ Edit</button>
+        </div>
+        <div class="co-field-display" data-key="${key}" style="font-size:0.88rem;color:var(--text);line-height:1.7;margin-top:8px;white-space:pre-wrap">${escHtml(value||"(not set — click Edit to add)")}</div>
+        ${inputHtml}
+        <div class="co-field-actions" data-key="${key}" style="display:none;gap:8px;margin-top:8px;justify-content:flex-end">
+            <button class="btn btn-ghost co-cancel-btn" data-key="${key}" style="padding:4px 12px;font-size:0.8rem">Cancel</button>
+            <button class="btn btn-primary co-save-btn" data-key="${key}" style="padding:4px 12px;font-size:0.8rem">Save</button>
+        </div>
+    </div>`;
+}
+
 function renderTeam(d) {
+    const ov = d._overrides || {};
+    const f = (key, fallback) => ov[key] !== undefined ? ov[key] : (fallback || "");
+
     return `
         <div class="panel-header">
             <div class="panel-title">🏢 Company</div>
-            <div class="panel-subtitle">Mission · Vision · Strategy · Goals</div>
+            <div class="panel-subtitle">All fields editable — click ✏️ Edit on any section</div>
         </div>
-
-        <div class="card" style="margin-bottom:16px">
-            <div class="card-title">Mission</div>
-            <div style="font-size:0.92rem;color:var(--text);line-height:1.7;font-style:italic">"${escHtml(d.mission)}"</div>
+        <div class="grid-2" style="gap:16px;margin-bottom:16px">
+            <div class="card">${_companyField("mission","🎯 Mission", f("mission", d.mission))}</div>
+            <div class="card">${_companyField("vision","🔭 Vision", f("vision","To be the intelligence layer for every ambitious team — making world-class thinking accessible to builders everywhere."))}</div>
         </div>
-
-        <div class="card" style="margin-bottom:16px">
-            <div class="card-title">Vision</div>
-            <div style="font-size:1rem;color:var(--text);line-height:1.8;font-style:italic;padding:8px 0">
-                "To be the intelligence layer for every ambitious team — making world-class thinking accessible to builders everywhere."
-            </div>
-            <div class="grid-2" style="margin-top:12px">
-                <div>
-                    <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">3-Year Picture</div>
-                    <ul class="checklist">
-                        <li class="check-item"><span class="check-icon">🌍</span><span style="font-size:0.85rem">Nouga is the default AI operating system for early-stage companies</span></li>
-                        <li class="check-item"><span class="check-icon">🤖</span><span style="font-size:0.85rem">AI agents handle 80% of routine operations autonomously</span></li>
-                        <li class="check-item"><span class="check-icon">📈</span><span style="font-size:0.85rem">Profitable, capital-efficient, and globally distributed</span></li>
-                    </ul>
-                </div>
-                <div>
-                    <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Core Beliefs</div>
-                    <ul class="checklist">
-                        <li class="check-item"><span class="check-icon">💡</span><span style="font-size:0.85rem">Small teams with great leverage beat large teams every time</span></li>
-                        <li class="check-item"><span class="check-icon">🔗</span><span style="font-size:0.85rem">AI and humans are partners, not replacements</span></li>
-                        <li class="check-item"><span class="check-icon">⚡</span><span style="font-size:0.85rem">Speed of learning is the ultimate competitive advantage</span></li>
-                    </ul>
-                </div>
-            </div>
+        <div class="grid-2" style="gap:16px;margin-bottom:16px">
+            <div class="card">${_companyField("vision_3yr","📅 3-Year Picture", f("vision_3yr","Nouga is the default AI OS for early-stage companies. AI agents handle 80% of routine operations autonomously. Profitable, capital-efficient, globally distributed."))}</div>
+            <div class="card">${_companyField("core_beliefs","💡 Core Beliefs", f("core_beliefs","Small teams with great leverage beat large teams every time.\nAI and humans are partners, not replacements.\nSpeed of learning is the ultimate competitive advantage."))}</div>
         </div>
-
-        <div class="card" style="margin-bottom:16px">
-            <div class="card-title">Strategy</div>
-            <div style="margin-bottom:14px">
-                <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🗺️ Where Do We Play</div>
-                <div class="grid-2" style="gap:10px">
-                    <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
-                        <div style="font-size:0.8rem;font-weight:700;color:var(--blue2);margin-bottom:6px">PRIMARY MARKET</div>
-                        <div style="font-size:0.85rem;color:var(--text);line-height:1.5">Early-stage startups (seed–Series A) running lean with 2–15 people who need operational leverage without headcount.</div>
-                    </div>
-                    <div style="background:var(--bg1);border:1px solid var(--border);border-radius:8px;padding:12px">
-                        <div style="font-size:0.8rem;font-weight:700;color:var(--blue2);margin-bottom:6px">GEOGRAPHY</div>
-                        <div style="font-size:0.85rem;color:var(--text);line-height:1.5">English-speaking markets first (US, UK, Canada, ANZ), expanding to Europe in 2026.</div>
-                    </div>
-                </div>
-            </div>
-            <div style="margin-bottom:14px">
-                <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🎁 What Do We Offer</div>
-                <ul class="checklist">
-                    <li class="check-item"><span class="check-icon">🤖</span><span style="font-size:0.85rem"><strong>AI Agent Suite</strong> — purpose-built agents for trading, security, content, and ops that run autonomously</span></li>
-                    <li class="check-item"><span class="check-icon">🧠</span><span style="font-size:0.85rem"><strong>Mission Control Dashboard</strong> — unified ops layer giving founders a single pane of glass</span></li>
-                    <li class="check-item"><span class="check-icon">⚙️</span><span style="font-size:0.85rem"><strong>Integration Platform</strong> — connects your tools (Slack, Gmail, GitHub, Binance) into one intelligent workflow</span></li>
-                    <li class="check-item"><span class="check-icon">📊</span><span style="font-size:0.85rem"><strong>LLM Council</strong> — multi-model reasoning for strategic decisions, not just task execution</span></li>
-                </ul>
-            </div>
-            <div>
-                <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">🚀 Go-to-Market</div>
-                <div class="grid-2" style="gap:10px">
-                    <div>
-                        <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Acquisition</div>
-                        <ul class="checklist">
-                            <li class="check-item"><span class="check-icon">✍️</span><span style="font-size:0.82rem">Founder-led content (build-in-public, X/LinkedIn)</span></li>
-                            <li class="check-item"><span class="check-icon">🤝</span><span style="font-size:0.82rem">Community partnerships with startup accelerators</span></li>
-                            <li class="check-item"><span class="check-icon">🔍</span><span style="font-size:0.82rem">SEO / organic via AI ops use-case content</span></li>
-                        </ul>
-                    </div>
-                    <div>
-                        <div style="font-size:0.8rem;font-weight:700;color:var(--text2);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px">Conversion & Retention</div>
-                        <ul class="checklist">
-                            <li class="check-item"><span class="check-icon">🎯</span><span style="font-size:0.82rem">Free trial → usage-based pricing</span></li>
-                            <li class="check-item"><span class="check-icon">📞</span><span style="font-size:0.82rem">High-touch onboarding for first 50 customers</span></li>
-                            <li class="check-item"><span class="check-icon">🔄</span><span style="font-size:0.82rem">Sticky via integrations and institutional memory</span></li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
+        <div class="card" style="margin-bottom:16px">${_companyField("strategy","🗺️ Strategy", f("strategy","Focus on early-stage startups (seed–Series A) running lean with 2–15 people.\nEnglish-speaking markets first (US, UK, Canada, ANZ), expanding to Europe in 2026."))}</div>
+        <div class="grid-2" style="gap:16px;margin-bottom:16px">
+            <div class="card">${_companyField("market","🌍 Market", f("market","Early-stage founders who need operational leverage without growing headcount. Primary: US, UK. Secondary: Europe 2026+."))}</div>
+            <div class="card">${_companyField("offer","🎁 What We Offer", f("offer","AI Agent Suite — autonomous agents for trading, security, content, ops.\nMission Control Dashboard — unified ops layer.\nIntegration Platform — connects Slack, Gmail, GitHub, Binance.\nLLM Council — multi-model reasoning for strategic decisions."))}</div>
         </div>
-
+        <div class="grid-2" style="gap:16px;margin-bottom:16px">
+            <div class="card">${_companyField("gtm","🚀 Go-to-Market", f("gtm","Founder-led content (build-in-public, X/LinkedIn).\nCommunity partnerships with startup accelerators.\nSEO / organic via AI ops use-case content."))}</div>
+            <div class="card">${_companyField("conversion","🎯 Conversion & Retention", f("conversion","Free trial → usage-based pricing.\nHigh-touch onboarding for first 50 customers.\nSticky via integrations and institutional memory."))}</div>
+        </div>
         <div class="card">
             <div class="card-title">Company Goals</div>
             <ul class="checklist">
                 ${d.goals.map(g=>`<li class="check-item"><span class="check-icon">🎯</span><span style="font-size:0.85rem">${escHtml(g)}</span></li>`).join("")}
             </ul>
         </div>`;
+}
+
+async function initTeamPanel(data, container) {
+    // Load overrides and patch display values
+    try {
+        const ov = await fetchData("company");
+        if (ov) {
+            container.querySelectorAll(".co-field-display").forEach(el => {
+                const key = el.dataset.key;
+                if (ov[key] !== undefined) {
+                    el.textContent = ov[key];
+                    const input = container.querySelector(`.co-field-input[data-key="${key}"]`);
+                    if (input) { if (input.tagName === "TEXTAREA") input.value = ov[key]; else input.value = ov[key]; }
+                }
+            });
+        }
+    } catch(e) { /* API offline, use defaults */ }
+
+    // Wire edit/cancel/save for every field
+    container.querySelectorAll(".co-edit-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const key = btn.dataset.key;
+            const display = container.querySelector(`.co-field-display[data-key="${key}"]`);
+            const input   = container.querySelector(`.co-field-input[data-key="${key}"]`);
+            const actions = container.querySelector(`.co-field-actions[data-key="${key}"]`);
+            display.style.display = "none";
+            input.style.display   = "";
+            actions.style.display = "flex";
+            btn.style.display     = "none";
+            if (input.tagName === "TEXTAREA") input.value = display.textContent;
+            else input.value = display.textContent;
+            input.focus();
+        });
+    });
+
+    container.querySelectorAll(".co-cancel-btn").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const key = btn.dataset.key;
+            container.querySelector(`.co-field-display[data-key="${key}"]`).style.display = "";
+            container.querySelector(`.co-field-input[data-key="${key}"]`).style.display   = "none";
+            container.querySelector(`.co-field-actions[data-key="${key}"]`).style.display = "none";
+            container.querySelector(`.co-edit-btn[data-key="${key}"]`).style.display      = "";
+        });
+    });
+
+    container.querySelectorAll(".co-save-btn").forEach(btn => {
+        btn.addEventListener("click", async () => {
+            const key     = btn.dataset.key;
+            const input   = container.querySelector(`.co-field-input[data-key="${key}"]`);
+            const display = container.querySelector(`.co-field-display[data-key="${key}"]`);
+            const content = input.value.trim();
+            btn.disabled = true; btn.textContent = "Saving…";
+            try {
+                await apiPut(`company/${key}`, { content });
+                display.textContent = content;
+                display.style.display = "";
+                input.style.display   = "none";
+                container.querySelector(`.co-field-actions[data-key="${key}"]`).style.display = "none";
+                container.querySelector(`.co-edit-btn[data-key="${key}"]`).style.display      = "";
+                btn.textContent = "Save"; btn.disabled = false;
+                showToast("✅ Saved", "green");
+            } catch(e) {
+                btn.textContent = "Save"; btn.disabled = false;
+                showToast("❌ Save failed", "red");
+            }
+        });
+    });
 }
 
 
@@ -4465,26 +4540,7 @@ function renderFactory(d) {
     return `
         <div class="panel-header">
             <div class="panel-title">🏭 Automation Workshop</div>
-            <div class="panel-subtitle">Visual workflow builder · ${d.workflows?.length || 0} active workflows · ${d.total_agents} agents</div>
-        </div>
-        <div class="card" style="margin-bottom:16px">
-            <div class="card-title">What are workflows?</div>
-            <div style="font-size:0.87rem;color:var(--text2);line-height:1.7;margin-bottom:10px">
-                Workflows automate multi-step tasks across agents. Each workflow defines a <span style="color:var(--green)">Trigger</span> (event or schedule),
-                a series of <span style="color:var(--blue2)">Actions</span> (agent tasks), optional <span style="color:var(--yellow)">Conditions</span> (branching logic),
-                and <span style="color:var(--purple)">Notifications</span> (Telegram/dashboard alerts).
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;font-size:0.8rem">
-                <span class="badge chip-trigger">Trigger — starts the flow</span>
-                <span class="badge chip-action">Action — agent task</span>
-                <span class="badge chip-condition">Condition — branch logic</span>
-                <span class="badge chip-notify">Notify — alert/message</span>
-                <span class="badge chip-delay">Delay — wait step</span>
-            </div>
-        </div>
-        <div class="card" style="margin-bottom:16px">
-            <div class="card-title">Example Workflows</div>
-            <div class="wf-examples-wrap">${exampleCards}</div>
+            <div class="panel-subtitle">Active workflows · drag to reorder · click to edit · ${d.workflows?.length || 0} workflows</div>
         </div>
         <div class="card">
             <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
@@ -4492,28 +4548,21 @@ function renderFactory(d) {
                 <button class="btn btn-primary" id="new-workflow-btn" style="padding:4px 10px;font-size:0.75rem">+ New Workflow</button>
             </div>
             <div id="workflows-list">
-                ${(d.workflows || []).map(w => `
-                    <div class="step-item" data-workflow="${escHtml(w.name)}">
-                        <span style="font-size:1rem">${w.emoji}</span>
+                ${(d.workflows || []).length === 0
+                    ? `<div style="padding:24px;text-align:center;color:var(--text3);font-size:0.85rem">No workflows yet — click + New Workflow to create one</div>`
+                    : (d.workflows || []).map(w => `
+                    <div class="step-item" data-workflow-id="${escHtml(w.id||w.name)}" style="cursor:pointer">
+                        <span class="step-number">⠿</span>
+                        <span style="font-size:1rem">${w.emoji||"⚙️"}</span>
                         <div style="flex:1">
                             <div class="service-name">${escHtml(w.name)}</div>
-                            <div class="service-port">${w.steps} steps · last: ${escHtml(w.last_run)}</div>
+                            <div class="service-port">${w.steps||0} steps · last: ${escHtml(w.last_run||"never")}</div>
                         </div>
                         ${statusBadge(w.status)}
+                        <button class="btn btn-ghost edit-wf-btn" data-id="${escHtml(w.id||w.name)}" style="padding:4px 8px;font-size:0.72rem">✏️</button>
                         <button class="btn btn-ghost run-wf-btn" style="padding:4px 8px;font-size:0.72rem">▶ Run</button>
                     </div>`).join("")}
             </div>
-        </div>
-        <div class="card" style="margin-top:12px">
-            <div class="card-title">Installed Skills</div>
-            ${(d.skills || []).map(s => `
-                <div class="service-row">
-                    <div class="service-left"><div>
-                        <div class="service-name">${escHtml(s.name)}</div>
-                        <div class="service-port">${s.category}</div>
-                    </div></div>
-                    ${badge(s.status,"green")}
-                </div>`).join("")}
         </div>`;
 }
 
@@ -5418,7 +5467,7 @@ const PANELS = {
     docs:      { fn: renderDocs,      endpoint: "docs"                             },
     people:    { fn: renderPeople,    endpoint: "people"                           },
     office:    { fn: renderOffice,    endpoint: "office",   init: initOfficePanel  },
-    team:      { fn: renderTeam,      endpoint: "team"                             },
+    team:      { fn: renderTeam,      endpoint: "team",    init: initTeamPanel     },
     system:    { fn: renderSystem,    endpoint: "system",   init: initSystemPanel  },
     skills:    { fn: renderSkills,    endpoint: null                               },
     radar:     { fn: renderRadar,     endpoint: "radar"                            },
