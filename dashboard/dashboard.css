@@ -1085,10 +1085,16 @@ body {
     height: 32px;
     border-bottom: 1px solid rgba(255,255,255,0.025);
     position: relative;
+    display: flex;
+    gap: 2px;
+    align-items: stretch;
+    padding: 2px;
+    overflow: hidden;
 }
 .cal-job-block {
-    position: absolute;
-    top: 3px; left: 2px; right: 2px;
+    position: relative;
+    flex: 1;
+    min-width: 20px;
     border-radius: 4px;
     padding: 1px 5px;
     font-size: 0.65rem; font-weight: 600;
