@@ -4353,7 +4353,8 @@ function initSystemPanel(data, container) {
 // Radar — SVG Spider Chart
 // ──────────────────────────────────────────────────────────────────────────────
 function renderRadar(d) {
-    const axes = [
+    // Use live axes from API if available, else sensible fallback
+    const axes = (d.axes && d.axes.length === 10) ? d.axes : [
         { label: "Firewall",      score: 10 },
         { label: "Tailscale",     score: 10 },
         { label: "SSH Keys",      score: 10 },
@@ -4361,9 +4362,9 @@ function renderRadar(d) {
         { label: "Monitoring",    score: 10 },
         { label: "Prompt Guard",  score: 10 },
         { label: "Port Security", score: 10 },
-        { label: "Audit Logs",    score: 9  },
         { label: "Access Ctrl",   score: 10 },
-        { label: "Backups",       score: 8  },
+        { label: "Dedicated",     score: 10 },
+        { label: "Backups",       score: 10 },
     ];
 
     const cx = 180, cy = 180, R = 140;
