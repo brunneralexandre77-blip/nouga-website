@@ -952,6 +952,7 @@ const AGENT_TOOLS = {
     lara:    { "file-system":true, "web-search":true, "code-exec":false, "browser":true,  "messaging":true, "memory":true, "trading":false },
     claude:  { "file-system":true, "web-search":true, "code-exec":true,  "browser":true,  "messaging":false,"memory":true, "trading":false },
     eva:     { "file-system":true, "web-search":true, "code-exec":false, "browser":false, "messaging":true, "memory":true, "trading":false },
+    herzog:  { "file-system":true, "web-search":true, "code-exec":true,  "browser":false, "messaging":true, "memory":true, "trading":false },
 };
 const MEMORY_PERMS = {
     milfred: { read_own:true,  read_all:true,  write:true  },
@@ -960,6 +961,7 @@ const MEMORY_PERMS = {
     lara:    { read_own:true,  read_all:false, write:true  },
     claude:  { read_own:true,  read_all:true,  write:true  },
     eva:     { read_own:true,  read_all:false, write:true  },
+    herzog:  { read_own:true,  read_all:true,  write:true  },
 };
 
 function renderAgents(d) {
@@ -1137,6 +1139,15 @@ function renderAgentDetail(agent, d) {
         </div>
 
         <div class="agent-tab-pane" data-pane="memory">
+            <div style="margin-bottom:12px;padding:10px;background:var(--bg2);border-radius:7px;border:1px solid var(--border1)">
+                <div class="agent-detail-label" style="margin-bottom:6px">📚 Knowledge Base</div>
+                <div style="font-size:0.75rem;color:var(--text3);line-height:1.9">
+                    <div>📁 Soul: <code style="color:var(--text2)">04-Agents/${escHtml(agent.id)}/SOUL.md</code></div>
+                    <div>🗓 Memory: <code style="color:var(--text2)">04-Agents/${escHtml(agent.id)}/memory/YYYY-MM-DD.md</code></div>
+                    <div>🧰 Tools: <code style="color:var(--text2)">04-Agents/${escHtml(agent.id)}/TOOLS.md</code></div>
+                    <div>🧠 Storage: Obsidian (primary) · SuperMemory (search) · Workspace (backup)</div>
+                </div>
+            </div>
             <div class="agent-detail-label" style="margin-bottom:8px">Memory Permissions</div>
             <table class="memory-matrix">
                 <thead><tr><th>Agent</th><th>Read Own</th><th>Read All</th><th>Write</th></tr></thead>
@@ -4636,6 +4647,119 @@ const WF_STEPS = {
             { type: "notify",    label: "📬 Alert Alex",           detail: "Dashboard card + Telegram message" },
         ],
     },
+    "phone-call": {
+        emoji: "📞",
+        desc: "Eva makes an outbound call via Vapi + ElevenLabs Jessica voice",
+        steps: [
+            { type: "trigger",   label: "📞 Call Requested",        detail: "Alex or dashboard triggers call" },
+            { type: "action",    label: "📝 Eva: Prepare Script",   detail: "Draft talking points from context" },
+            { type: "action",    label: "🔊 Vapi: Dial Number",     detail: "ElevenLabs Jessica · +41 79 467 13 58" },
+            { type: "action",    label: "💬 Eva: Conduct Call",     detail: "Professional, warm, solution-focused" },
+            { type: "action",    label: "📋 Eva: Log Summary",      detail: "Write outcome to Obsidian memory" },
+            { type: "notify",    label: "✅ Report to Alex",        detail: "Dashboard card + Telegram notification" },
+        ],
+    },
+    "email-management": {
+        emoji: "📧",
+        desc: "Eva handles inbound/outbound email via milfredagent@gmail.com",
+        steps: [
+            { type: "trigger",   label: "📬 Email Event",           detail: "New email or send request" },
+            { type: "action",    label: "🔍 Eva: Triage",           detail: "Priority filter — urgent vs queue" },
+            { type: "action",    label: "✍️ Eva: Draft Reply",      detail: "Professional tone, action-oriented" },
+            { type: "condition", label: "❓ Alex Approval?",        detail: "Auto-send low risk, review high risk" },
+            { type: "notify",    label: "📤 Send & Log",            detail: "Send email + log to Obsidian" },
+        ],
+    },
+    "research-briefing": {
+        emoji: "🔬",
+        desc: "Eva researches a topic and delivers a structured briefing to Alex",
+        steps: [
+            { type: "trigger",   label: "🔬 Research Request",      detail: "Alex requests briefing on topic" },
+            { type: "action",    label: "🌐 Eva: Web Research",      detail: "Search + fetch relevant sources" },
+            { type: "action",    label: "📊 Eva: Synthesise",        detail: "Compile findings, extract key insights" },
+            { type: "action",    label: "📝 Eva: Write Briefing",    detail: "Structured: summary · details · action items" },
+            { type: "notify",    label: "📬 Deliver to Alex",        detail: "Dashboard card + Telegram" },
+        ],
+    },
+    "trading-bot": {
+        emoji: "🤖",
+        desc: "Gordon runs the Binance Futures momentum + funding rate bot",
+        steps: [
+            { type: "trigger",   label: "⏰ Market Open",           detail: "Cron trigger on market session start" },
+            { type: "action",    label: "📊 Gordon: Market Scan",   detail: "BTC/ETH momentum signals, funding rates" },
+            { type: "condition", label: "❓ Signal Found?",         detail: "Threshold: momentum > threshold, funding > 0.01%" },
+            { type: "action",    label: "💰 Gordon: Size Position", detail: "Risk rules: never exceed approved sizing" },
+            { type: "action",    label: "🚀 Binance: Execute",      detail: "Place order via API, log trade" },
+            { type: "notify",    label: "📈 Report P&L",            detail: "Telegram + dashboard trade log" },
+        ],
+    },
+    "position-management": {
+        emoji: "⚖️",
+        desc: "Gordon monitors open positions and applies stop-loss + take-profit rules",
+        steps: [
+            { type: "trigger",   label: "⏰ Every 5 min",          detail: "Continuous position monitoring cron" },
+            { type: "action",    label: "📊 Gordon: Check P&L",    detail: "Unrealised PnL vs stop/target levels" },
+            { type: "condition", label: "❓ Exit Trigger?",         detail: "Stop-loss hit, take-profit hit, or signal flip" },
+            { type: "action",    label: "🔒 Gordon: Close/Hedge",  detail: "Execute exit or hedge via Binance API" },
+            { type: "notify",    label: "📋 Log & Alert",          detail: "Update trading journal + alert if >$50 impact" },
+        ],
+    },
+    "content-creation": {
+        emoji: "🎨",
+        desc: "Lara produces Instagram content for @lara_livingthedream",
+        steps: [
+            { type: "trigger",   label: "📅 Content Calendar",     detail: "Scheduled daily content slot" },
+            { type: "action",    label: "💡 Lara: Ideate",         detail: "Pick topic: 40% lifestyle / 30% BTS / 20% inspo / 10% interactive" },
+            { type: "action",    label: "🖼️ Lara: Create",         detail: "AI image + caption + 10-15 hashtags" },
+            { type: "condition", label: "❓ Human Approval",       detail: "Alex reviews before any post goes live" },
+            { type: "action",    label: "📤 Lara: Schedule",       detail: "Post at 11am–1pm or 7pm–9pm CET" },
+            { type: "notify",    label: "📊 Report Engagement",    detail: "Track saves/shares 2h after posting" },
+        ],
+    },
+    "ugc-automation": {
+        emoji: "🔄",
+        desc: "Lara repurposes one content piece into multiple platform formats",
+        steps: [
+            { type: "trigger",   label: "📥 Source Content",       detail: "New post, video, or idea from Alex" },
+            { type: "action",    label: "✂️ Lara: Repurpose",      detail: "Extract 5+ clips, 3 captions, 1 thread, 1 newsletter seg" },
+            { type: "action",    label: "🗓 Lara: Schedule Queue", detail: "Add to 30-day content pipeline" },
+            { type: "notify",    label: "📋 Pipeline Updated",     detail: "Report new inventory to Alex" },
+        ],
+    },
+    "daily-ops": {
+        emoji: "🌅",
+        desc: "Milfred runs daily system diagnostics and unblocks agents",
+        steps: [
+            { type: "trigger",   label: "⏰ 08:00 CET Daily",      detail: "Morning operations cron" },
+            { type: "action",    label: "🧠 Milfred: Agent Check", detail: "Status of all 7 agents — blocked? behind? misaligned?" },
+            { type: "action",    label: "🔗 Milfred: Deps Audit",  detail: "Map cross-agent dependencies for the day" },
+            { type: "action",    label: "🎯 Milfred: Priorities",  detail: "Set top 3 team priorities for the day" },
+            { type: "notify",    label: "📬 Briefing to Alex",     detail: "Daily ops summary via Telegram" },
+        ],
+    },
+    "health-monitoring": {
+        emoji: "💚",
+        desc: "Herzog monitors infrastructure health and responds to incidents",
+        steps: [
+            { type: "trigger",   label: "⏰ Every 5 min",          detail: "Continuous monitoring cron" },
+            { type: "action",    label: "🔍 Herzog: Health Check", detail: "Services, ports, disk, memory, CPU" },
+            { type: "condition", label: "❓ Degradation?",         detail: "Any metric outside threshold" },
+            { type: "action",    label: "🔧 Herzog: Auto-Heal",    detail: "Restart service, clear cache, scale up" },
+            { type: "notify",    label: "🚨 Alert if Critical",    detail: "Dashboard incident + Telegram if P1/P2" },
+        ],
+    },
+    "agent-onboarding": {
+        emoji: "🤝",
+        desc: "Milfred onboards a new agent: SOUL.md, tools, memory, integration",
+        steps: [
+            { type: "trigger",   label: "🆕 New Agent Needed",     detail: "Alex decides a capability gap requires a new agent" },
+            { type: "action",    label: "📝 Milfred: Write SOUL",  detail: "Define role, goal, key question, behaviors" },
+            { type: "action",    label: "🔧 Herzog: Provision",    detail: "Create openclaw entry, memory dirs, model config" },
+            { type: "action",    label: "🧪 Ernst: QA Check",      detail: "Validate SOUL.md quality, tool permissions" },
+            { type: "action",    label: "🔗 Milfred: Integrate",   detail: "Add to org chart, team protocols, dashboard" },
+            { type: "notify",    label: "✅ Agent Live",           detail: "Announce to team, add to Obsidian index" },
+        ],
+    },
 };
 // Legacy name mapping for WF_EXAMPLES compatibility
 const WF_EXAMPLES = [
@@ -5099,9 +5223,19 @@ function renderGantt(d) {
 const ANTFARM_API = "http://localhost:5001/api/antfarm";
 
 const WF_META = {
-    "bug-fix":        { emoji: "🐛", label: "Bug Fix",        color: "#f87171" },
-    "feature-dev":    { emoji: "✨", label: "Feature Dev",    color: "#60a5fa" },
-    "security-audit": { emoji: "🔒", label: "Security Audit", color: "#fb923c" },
+    "bug-fix":             { emoji: "🐛", label: "Bug Fix",          color: "#f87171" },
+    "feature-dev":         { emoji: "✨", label: "Feature Dev",       color: "#60a5fa" },
+    "security-audit":      { emoji: "🔒", label: "Security Audit",    color: "#fb923c" },
+    "phone-call":          { emoji: "📞", label: "Phone Call",        color: "#a78bfa" },
+    "email-management":    { emoji: "📧", label: "Email Management",  color: "#60a5fa" },
+    "research-briefing":   { emoji: "🔬", label: "Research Briefing", color: "#34d399" },
+    "trading-bot":         { emoji: "🤖", label: "Trading Bot",       color: "#f5a623" },
+    "position-management": { emoji: "⚖️", label: "Position Mgmt",    color: "#fb923c" },
+    "content-creation":    { emoji: "🎨", label: "Content Creation",  color: "#f472b6" },
+    "ugc-automation":      { emoji: "🔄", label: "UGC Automation",    color: "#c084fc" },
+    "daily-ops":           { emoji: "🌅", label: "Daily Ops",         color: "#fbbf24" },
+    "health-monitoring":   { emoji: "💚", label: "Health Monitoring", color: "#4ade80" },
+    "agent-onboarding":    { emoji: "🤝", label: "Agent Onboarding",  color: "#94a3b8" },
 };
 
 function _wfStatusBadge(status) {
