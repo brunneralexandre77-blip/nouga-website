@@ -993,10 +993,13 @@ function renderAgents(d) {
             <div class="panel-title">🤖 Agents</div>
             <div class="panel-subtitle">OpenClaw: ${d.openclaw_running?badge("online","green"):badge("offline","red")} · Max concurrent: ${d.max_concurrent}</div>
         </div>
-        <div class="agents-layout">
-            <div>
-                <div class="card" style="margin-bottom:16px">
-                    <div class="card-title">Org Chart</div>
+        <div class="agents-layout" id="agents-layout-canvas">
+            <div class="agents-panel-box" id="agents-box-org" style="left:0;top:0;width:55%;min-height:320px">
+                <div class="agents-drag-handle" data-box="agents-box-org">
+                    <span><span class="drag-icon">⠿</span> Org Chart</span>
+                    <span style="font-size:0.65rem;opacity:0.4">drag to move · resize corner</span>
+                </div>
+                <div class="agents-panel-box-inner">
                     <div class="org-chart" style="overflow-x:auto;padding-bottom:8px">
                         <!-- Level 0: CEO -->
                         <div style="display:flex;justify-content:center">
@@ -1039,7 +1042,15 @@ function renderAgents(d) {
                     </div>
                 </div>
             </div>
-            <div class="agent-detail-panel" id="agent-detail">${detailHTML}</div>
+            <div class="agents-panel-box" id="agents-box-detail" style="right:0;top:0;width:43%;min-height:320px">
+                <div class="agents-drag-handle" data-box="agents-box-detail">
+                    <span><span class="drag-icon">⠿</span> Agent Detail</span>
+                    <span style="font-size:0.65rem;opacity:0.4">drag to move · resize corner</span>
+                </div>
+                <div class="agents-panel-box-inner">
+                    <div id="agent-detail" style="padding:0">${detailHTML}</div>
+                </div>
+            </div>
         </div>`;
 }
 
@@ -1178,6 +1189,71 @@ function initAgentsPanel(data, container) {
         });
     });
     if (_selectedAgent) wireAgentDetail(_selectedAgent, container.querySelector("#agent-detail") || container);
+
+    // Make agent boxes draggable and restore saved layout
+    function _initAgentBoxDrag(canvas) {
+        const STORAGE_KEY = "agents_panel_layout";
+        let saved = {};
+        try { saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"); } catch(e) {}
+
+        canvas.querySelectorAll(".agents-panel-box").forEach(box => {
+            const id = box.id;
+            if (saved[id]) {
+                const s = saved[id];
+                // Apply saved position; clear right/left shorthand first
+                box.style.cssText = `left:${s.left}px;top:${s.top}px;width:${s.width}px;min-height:${s.minHeight||320}px`;
+                if (s.height) box.style.height = s.height + "px";
+            }
+            const handle = box.querySelector(".agents-drag-handle");
+            if (!handle) return;
+            handle.addEventListener("mousedown", e => {
+                if (e.target.closest("button")) return;
+                e.preventDefault();
+                const rect = box.getBoundingClientRect();
+                const canvasRect = canvas.getBoundingClientRect();
+                const startX = e.clientX;
+                const startY = e.clientY;
+                const startLeft = rect.left - canvasRect.left + canvas.scrollLeft;
+                const startTop  = rect.top  - canvasRect.top  + canvas.scrollTop;
+                box.style.zIndex = 10;
+                const onMove = ev => {
+                    const newLeft = Math.max(0, startLeft + ev.clientX - startX);
+                    const newTop  = Math.max(0, startTop  + ev.clientY - startY);
+                    box.style.left = newLeft + "px";
+                    box.style.top  = newTop  + "px";
+                    box.style.right = "auto";
+                };
+                const onUp = () => {
+                    box.style.zIndex = "";
+                    document.removeEventListener("mousemove", onMove);
+                    document.removeEventListener("mouseup", onUp);
+                    // Persist layout
+                    const cr = canvas.getBoundingClientRect();
+                    const br = box.getBoundingClientRect();
+                    saved[id] = {
+                        left: br.left - cr.left + canvas.scrollLeft,
+                        top:  br.top  - cr.top  + canvas.scrollTop,
+                        width: box.offsetWidth,
+                        height: box.offsetHeight,
+                    };
+                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch(e) {}
+                };
+                document.addEventListener("mousemove", onMove);
+                document.addEventListener("mouseup", onUp);
+            });
+            // Also persist size on resize end (via ResizeObserver or a simple trick)
+            new ResizeObserver(() => {
+                const cr = canvas.getBoundingClientRect();
+                const br = box.getBoundingClientRect();
+                if (!saved[id]) saved[id] = {};
+                saved[id].width  = box.offsetWidth;
+                saved[id].height = box.offsetHeight;
+                try { localStorage.setItem(STORAGE_KEY, JSON.stringify(saved)); } catch(e) {}
+            }).observe(box);
+        });
+    }
+    const canvas = container.querySelector("#agents-layout-canvas");
+    if (canvas) _initAgentBoxDrag(canvas);
 }
 
 function wireAgentDetail(agentId, panel) {
@@ -1598,10 +1674,15 @@ function initCalendarPanel(data, container) {
     container.querySelectorAll(".cal-job-block[draggable='true']").forEach(block => {
         block.addEventListener("dragstart", e => {
             _dragJobId = parseInt(block.dataset.jobId);
-            block.style.opacity = "0.4";
             e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", String(block.dataset.jobId));
+            // Use cal-dragging class (pointer-events:none) so sibling blocks don't block drop targets
+            requestAnimationFrame(() => block.classList.add("cal-dragging"));
         });
-        block.addEventListener("dragend", () => { block.style.opacity = ""; });
+        block.addEventListener("dragend", () => {
+            block.classList.remove("cal-dragging");
+            container.querySelectorAll(".cal-cell-drop").forEach(c => c.classList.remove("cal-cell-drop"));
+        });
     });
 
     container.querySelectorAll(".cal-cell").forEach((cell, idx) => {
@@ -1611,12 +1692,13 @@ function initCalendarPanel(data, container) {
         cell.addEventListener("drop", async e => {
             e.preventDefault();
             cell.classList.remove("cal-cell-drop");
-            if (_dragJobId === null) return;
-            const job = (data.cron_jobs || []).find(j => j.id === _dragJobId);
+            const jobId = _dragJobId ?? parseInt(e.dataTransfer.getData("text/plain"));
+            if (!jobId && jobId !== 0) return;
+            const job = (data.cron_jobs || []).find(j => j.id === jobId);
             if (!job || job.is_repeating) return;
             const newSchedule = `0 ${hour} * * *`;
             try {
-                await apiPut(`cron/${_dragJobId}`, { schedule: newSchedule, command: job.command });
+                await apiPut(`cron/${jobId}`, { schedule: newSchedule, command: job.command });
                 showToast(`✅ Moved to ${String(hour).padStart(2,"0")}:00`, "green");
                 loadPanel("calendar");
             } catch(e) { showToast("❌ Failed to move job", "red"); }
@@ -4546,7 +4628,36 @@ function wfFlowHtml(steps) {
 }
 
 function renderFactory(d) {
-    const exampleCards = WF_EXAMPLES.map(ex => `
+    // Build step data for API workflows using WF_EXAMPLES as lookup
+    const wfStepsLookup = {};
+    WF_EXAMPLES.forEach(ex => { wfStepsLookup[ex.name.toLowerCase()] = ex; });
+
+    const workflowRows = (d.workflows || []).map(w => {
+        const exMatch = wfStepsLookup[w.name.toLowerCase()];
+        const hasSteps = exMatch && exMatch.steps;
+        return `
+        <div class="wf-list-item" data-workflow-id="${escHtml(w.id||w.name)}">
+            <div class="step-item wf-summary-row" style="cursor:pointer" data-wf-toggle="${escHtml(w.id||w.name)}">
+                <span class="step-number">⠿</span>
+                <span style="font-size:1rem">${w.emoji||"⚙️"}</span>
+                <div style="flex:1">
+                    <div class="service-name">${escHtml(w.name)}</div>
+                    <div class="service-port">${w.steps||0} steps · last: ${escHtml(w.last_run||"never")}</div>
+                </div>
+                ${statusBadge(w.status)}
+                ${hasSteps ? `<button class="btn btn-ghost wf-flow-toggle" data-wf="${escHtml(w.id||w.name)}" style="padding:4px 8px;font-size:0.72rem" title="Toggle visual flow">📊</button>` : ""}
+                <button class="btn btn-ghost edit-wf-btn" data-id="${escHtml(w.id||w.name)}" style="padding:4px 8px;font-size:0.72rem">✏️</button>
+                <button class="btn btn-ghost run-wf-btn" style="padding:4px 8px;font-size:0.72rem">▶ Run</button>
+            </div>
+            ${hasSteps ? `
+            <div class="wf-flow-detail" id="wf-detail-${escHtml(w.id||w.name)}" style="display:none;padding:8px 12px 12px 12px;border-top:1px solid var(--border);background:var(--bg)">
+                <div class="wf-flow-label" style="margin-bottom:8px">${escHtml(exMatch.desc||"")}</div>
+                ${wfFlowHtml(exMatch.steps)}
+            </div>` : ""}
+        </div>`;
+    });
+
+    const templateCards = WF_EXAMPLES.map(ex => `
         <div class="wf-example-card">
             <div class="wf-example-header">
                 <span style="font-size:1.4rem">${ex.emoji}</span>
@@ -4561,39 +4672,55 @@ function renderFactory(d) {
     return `
         <div class="panel-header">
             <div class="panel-title">🏭 Automation Workshop</div>
-            <div class="panel-subtitle">Active workflows · drag to reorder · click to edit · ${d.workflows?.length || 0} workflows</div>
+            <div class="panel-subtitle">Active workflows · drag to reorder · click 📊 to view steps · ${d.workflows?.length || 0} workflows</div>
         </div>
-        <div class="card">
+        <div class="card" style="margin-bottom:16px">
             <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
                 Active Workflows
                 <button class="btn btn-primary" id="new-workflow-btn" style="padding:4px 10px;font-size:0.75rem">+ New Workflow</button>
             </div>
             <div id="workflows-list">
-                ${(d.workflows || []).length === 0
+                ${workflowRows.length === 0
                     ? `<div style="padding:24px;text-align:center;color:var(--text3);font-size:0.85rem">No workflows yet — click + New Workflow to create one</div>`
-                    : (d.workflows || []).map(w => `
-                    <div class="step-item" data-workflow-id="${escHtml(w.id||w.name)}" style="cursor:pointer">
-                        <span class="step-number">⠿</span>
-                        <span style="font-size:1rem">${w.emoji||"⚙️"}</span>
-                        <div style="flex:1">
-                            <div class="service-name">${escHtml(w.name)}</div>
-                            <div class="service-port">${w.steps||0} steps · last: ${escHtml(w.last_run||"never")}</div>
-                        </div>
-                        ${statusBadge(w.status)}
-                        <button class="btn btn-ghost edit-wf-btn" data-id="${escHtml(w.id||w.name)}" style="padding:4px 8px;font-size:0.72rem">✏️</button>
-                        <button class="btn btn-ghost run-wf-btn" style="padding:4px 8px;font-size:0.72rem">▶ Run</button>
-                    </div>`).join("")}
+                    : workflowRows.join("")}
             </div>
+        </div>
+        <div class="card">
+            <div class="card-title">📋 Workflow Templates</div>
+            <div style="font-size:0.75rem;color:var(--text3);margin-bottom:12px">Example automation flows — click + New Workflow to build your own</div>
+            <div class="wf-examples-wrap">${templateCards}</div>
         </div>`;
 }
 
 function initFactoryPanel(data, container) {
     if (typeof Sortable !== "undefined") {
         const list = container.querySelector("#workflows-list");
-        if (list) Sortable.create(list, { animation: 150, ghostClass: "sortable-ghost" });
+        if (list) Sortable.create(list, { animation: 150, ghostClass: "sortable-ghost", handle: ".step-number" });
     }
 
     container.querySelector("#new-workflow-btn")?.addEventListener("click", () => showWorkflowModal());
+
+    // Toggle flow diagrams
+    container.querySelectorAll(".wf-flow-toggle").forEach(btn => {
+        btn.addEventListener("click", e => {
+            e.stopPropagation();
+            const wfId = btn.dataset.wf;
+            const detail = container.querySelector(`#wf-detail-${CSS.escape(wfId)}`);
+            if (!detail) return;
+            const isOpen = detail.style.display !== "none";
+            detail.style.display = isOpen ? "none" : "block";
+            btn.textContent = isOpen ? "📊" : "🔼";
+        });
+    });
+
+    container.querySelectorAll(".wf-summary-row").forEach(row => {
+        row.addEventListener("click", e => {
+            if (e.target.closest("button")) return; // let buttons handle their own clicks
+            const wfId = row.dataset.wfToggle;
+            const toggleBtn = row.querySelector(".wf-flow-toggle");
+            if (toggleBtn) toggleBtn.click();
+        });
+    });
 
     container.querySelectorAll(".run-wf-btn").forEach(btn => {
         btn.addEventListener("click", e => {

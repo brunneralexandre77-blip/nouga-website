@@ -991,19 +991,49 @@ body {
 
 /* ── Agent detail panel ── */
 .agents-layout {
-    display: grid;
-    grid-template-columns: 1fr 320px;
-    gap: 16px;
-    align-items: start;
+    position: relative;
+    min-height: 640px;
+    width: 100%;
 }
 .agent-detail-panel {
     background: var(--bg1);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 20px;
-    position: sticky;
-    top: 0;
-    max-height: calc(100vh - 140px);
+    overflow-y: auto;
+}
+.agents-panel-box {
+    position: absolute;
+    background: var(--bg1);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    overflow: auto;
+    resize: both;
+    min-width: 280px;
+    min-height: 180px;
+    box-shadow: var(--shadow-md);
+    z-index: 1;
+}
+.agents-panel-box .agents-drag-handle {
+    cursor: grab;
+    user-select: none;
+    padding: 8px 14px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    border-radius: var(--radius) var(--radius) 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text2);
+    letter-spacing: 0.04em;
+}
+.agents-panel-box .agents-drag-handle:active { cursor: grabbing; }
+.agents-panel-box .agents-drag-handle .drag-icon { opacity: 0.4; margin-right: 6px; }
+.agents-panel-box-inner {
+    padding: 12px;
+    height: calc(100% - 37px);
     overflow-y: auto;
 }
 .agent-detail-header {
@@ -1625,6 +1655,16 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
 .wf-example-header { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
 .wf-example-name { font-size: 0.85rem; font-weight: 700; color: #fff; }
 .wf-example-desc { font-size: 0.75rem; color: var(--text3); margin-top: 2px; }
+.wf-list-item {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    margin-bottom: 8px;
+    overflow: hidden;
+    transition: border-color 0.15s;
+}
+.wf-list-item:hover { border-color: var(--border2); }
+.wf-list-item .step-item { border-bottom: none; border-radius: 0; }
+.wf-flow-detail .wf-flow { flex-wrap: wrap; gap: 4px; }
 .chip-notify { background: rgba(239,68,68,0.15); color: #f87171; }
 
 /* ── Notification Bell ── */
