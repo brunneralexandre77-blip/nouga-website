@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nouga Dashboard — Style Directions</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a0f; color: #fff; font-family: 'Inter', sans-serif; padding: 40px 24px; }
+
+h1 { text-align: center; font-size: 1.1rem; color: #666; font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 8px; }
+.subtitle { text-align: center; color: #444; font-size: 0.8rem; margin-bottom: 48px; }
+
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 32px; max-width: 1400px; margin: 0 auto; }
+
+.direction-label {
+    font-size: 0.65rem;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid #222;
+}
+
+/* ─── DIRECTION A: Premium SaaS (Linear/Vercel) ─── */
+.a { --bg0: #0d0d14; --bg1: #111118; --bg2: #16161f; --bg3: #1c1c28; --border: #1f1f2e; --accent: #6366f1; --accent2: #818cf8; --text1: #f0f0ff; --text2: #9090b0; --text3: #5a5a7a; --green: #34d399; --red: #f87171; --yellow: #fbbf24; }
+.a .direction-label { color: #6366f1; border-color: #1f1f2e; }
+
+/* ─── DIRECTION B: Command Center (NASA/Military) ─── */
+.b { --bg0: #060810; --bg1: #080c14; --bg2: #0d1220; --bg3: #121828; --border: #1a2235; --accent: #00d4ff; --accent2: #00a8cc; --text1: #e0f0ff; --text2: #7090b0; --text3: #405070; --green: #00ff88; --red: #ff4466; --yellow: #ffcc00; }
+.b .direction-label { color: #00d4ff; border-color: #1a2235; }
+
+/* ─── DIRECTION C: Luxury Dark (Gold accents, noble) ─── */
+.c { --bg0: #09090b; --bg1: #0e0e10; --bg2: #141416; --bg3: #1a1a1e; --border: #222226; --accent: #d4a843; --accent2: #f0c96a; --text1: #f5f0e8; --text2: #8a8070; --text3: #5a5248; --green: #4ade80; --red: #f87171; --yellow: #d4a843; }
+.c .direction-label { color: #d4a843; border-color: #222226; }
+
+.panel {
+    background: var(--bg1);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px;
+}
+
+/* Stat cards row */
+.stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+
+/* DIRECTION A stat cards */
+.a .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.a .stat-value { font-size: 1.6rem; font-weight: 700; color: var(--text1); letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; }
+.a .stat-label { font-size: 0.7rem; color: var(--text3); font-weight: 500; letter-spacing: 0.05em; text-transform: uppercase; }
+.a .stat-delta { font-size: 0.72rem; color: var(--green); margin-top: 6px; font-weight: 500; }
+
+/* DIRECTION B stat cards */
+.b .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 16px;
+    position: relative;
+    overflow: hidden;
+}
+.b .stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0.6;
+}
+.b .stat-value { font-size: 1.6rem; font-weight: 700; color: var(--accent); letter-spacing: -0.02em; line-height: 1; margin-bottom: 4px; font-family: 'Space Grotesk', monospace; }
+.b .stat-label { font-size: 0.68rem; color: var(--text3); font-weight: 500; letter-spacing: 0.12em; text-transform: uppercase; }
+.b .stat-delta { font-size: 0.72rem; color: var(--green); margin-top: 6px; font-weight: 600; font-family: monospace; }
+
+/* DIRECTION C stat cards */
+.c .stat-card {
+    background: linear-gradient(135deg, var(--bg2) 0%, var(--bg3) 100%);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+}
+.c .stat-value { font-size: 1.6rem; font-weight: 300; color: var(--accent2); letter-spacing: -0.01em; line-height: 1; margin-bottom: 4px; font-family: 'DM Sans', sans-serif; }
+.c .stat-label { font-size: 0.7rem; color: var(--text3); font-weight: 400; letter-spacing: 0.08em; text-transform: uppercase; }
+.c .stat-delta { font-size: 0.72rem; color: var(--green); margin-top: 6px; }
+
+/* Task items */
+.task-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+
+.a .task-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.82rem;
+}
+.a .task-item:hover { border-color: var(--accent); }
+.a .task-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.a .task-title { color: var(--text1); flex: 1; font-weight: 500; }
+.a .task-agent { color: var(--text3); font-size: 0.72rem; }
+.a .task-badge { font-size: 0.65rem; padding: 2px 7px; border-radius: 4px; font-weight: 600; letter-spacing: 0.04em; }
+
+.b .task-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-left: 2px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    font-size: 0.82rem;
+}
+.b .task-dot { width: 6px; height: 6px; border-radius: 1px; flex-shrink: 0; transform: rotate(45deg); }
+.b .task-title { color: var(--text1); flex: 1; font-family: 'Space Grotesk', sans-serif; font-weight: 500; font-size: 0.8rem; }
+.b .task-agent { color: var(--accent2); font-size: 0.68rem; font-family: monospace; letter-spacing: 0.05em; }
+.b .task-badge { font-size: 0.62rem; padding: 2px 6px; border-radius: 3px; font-weight: 700; letter-spacing: 0.08em; font-family: monospace; }
+
+.c .task-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 11px 14px;
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 0.82rem;
+    font-family: 'DM Sans', sans-serif;
+}
+.c .task-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+.c .task-title { color: var(--text1); flex: 1; font-weight: 400; }
+.c .task-agent { color: var(--text3); font-size: 0.72rem; }
+.c .task-badge { font-size: 0.65rem; padding: 2px 8px; border-radius: 20px; font-weight: 500; }
+
+/* Badges */
+.badge-high { background: rgba(248,113,113,0.15); color: #f87171; }
+.b .badge-high { background: rgba(255,68,102,0.12); color: #ff4466; }
+.c .badge-high { background: rgba(248,113,113,0.12); color: #f87171; }
+.badge-normal { background: rgba(99,102,241,0.15); color: #818cf8; }
+.b .badge-normal { background: rgba(0,212,255,0.1); color: #00d4ff; }
+.c .badge-normal { background: rgba(212,168,67,0.12); color: #d4a843; }
+.badge-done { background: rgba(52,211,153,0.12); color: #34d399; }
+
+/* Agent row */
+.agent-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; margin-bottom: 6px; background: var(--bg2); border: 1px solid var(--border); }
+.agent-avatar { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.9rem; flex-shrink: 0; }
+.a .agent-avatar { background: var(--bg3); border: 1px solid var(--border); }
+.b .agent-avatar { background: var(--bg3); border: 1px solid var(--accent); box-shadow: 0 0 8px rgba(0,212,255,0.2); }
+.c .agent-avatar { background: var(--bg3); border: 1px solid var(--border); }
+.agent-name { font-size: 0.82rem; font-weight: 600; color: var(--text1); }
+.a .agent-name { font-family: 'Inter', sans-serif; }
+.b .agent-name { font-family: 'Space Grotesk', sans-serif; letter-spacing: 0.02em; }
+.c .agent-name { font-family: 'DM Sans', sans-serif; font-weight: 400; }
+.agent-status { font-size: 0.7rem; color: var(--text3); margin-top: 1px; }
+.b .agent-status { font-family: monospace; color: var(--accent2); font-size: 0.65rem; letter-spacing: 0.05em; }
+.status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); margin-left: auto; flex-shrink: 0; }
+.b .status-dot { box-shadow: 0 0 6px var(--green); }
+
+/* Mini chart */
+.chart-wrap { margin-top: 16px; }
+.chart-label { font-size: 0.68rem; color: var(--text3); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.08em; }
+
+.bar-chart { display: flex; align-items: flex-end; gap: 5px; height: 48px; }
+.bar { flex: 1; border-radius: 3px 3px 0 0; transition: opacity 0.2s; }
+.a .bar { background: var(--accent); opacity: 0.7; border-radius: 4px 4px 0 0; }
+.a .bar:last-child, .a .bar:nth-last-child(2) { opacity: 1; }
+.b .bar { background: var(--accent); opacity: 0.5; border-radius: 2px 2px 0 0; }
+.b .bar:last-child { opacity: 1; box-shadow: 0 0 8px var(--accent); }
+.b .bar:nth-last-child(2) { opacity: 0.8; }
+.c .bar { background: linear-gradient(to top, var(--accent), var(--accent2)); opacity: 0.5; border-radius: 3px 3px 0 0; }
+.c .bar:last-child, .c .bar:nth-last-child(2) { opacity: 0.9; }
+
+/* Section header */
+.section-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.section-title { font-size: 0.72rem; font-weight: 600; color: var(--text2); text-transform: uppercase; letter-spacing: 0.1em; }
+.a .section-title { color: var(--text2); }
+.b .section-title { color: var(--accent); font-family: monospace; letter-spacing: 0.15em; }
+.c .section-title { color: var(--accent); font-weight: 500; letter-spacing: 0.12em; }
+.section-action { font-size: 0.68rem; color: var(--accent); cursor: pointer; }
+
+/* Progress bar */
+.progress-row { margin-top: 14px; }
+.progress-label { display: flex; justify-content: space-between; font-size: 0.7rem; color: var(--text3); margin-bottom: 5px; }
+.progress-track { height: 4px; background: var(--bg3); border-radius: 4px; overflow: hidden; }
+.a .progress-fill { height: 100%; border-radius: 4px; background: var(--accent); }
+.b .progress-fill { height: 100%; border-radius: 0; background: linear-gradient(90deg, var(--accent2), var(--accent)); box-shadow: 0 0 6px var(--accent); }
+.c .progress-fill { height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--accent), var(--accent2)); }
+.b .progress-track { height: 3px; border-radius: 0; background: var(--bg3); border: 1px solid var(--border); }
+</style>
+</head>
+<body>
+
+<h1>Nouga Mission Control — Style Directions</h1>
+<p class="subtitle">Three visual directions · same components · pick what resonates</p>
+
+<div class="grid">
+
+    <!-- ─── DIRECTION A ─── -->
+    <div class="a">
+        <div class="direction-label">A — Premium SaaS &nbsp;·&nbsp; Linear / Vercel aesthetic</div>
+        <div class="panel">
+            <div class="section-hdr">
+                <span class="section-title">Overview</span>
+                <span class="section-action">View all →</span>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-value">24</div>
+                    <div class="stat-label">Active Tasks</div>
+                    <div class="stat-delta">↑ 3 today</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">7</div>
+                    <div class="stat-label">Agents Online</div>
+                    <div class="stat-delta">All healthy</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">98%</div>
+                    <div class="stat-label">Uptime</div>
+                    <div class="stat-delta">Last 30d</div>
+                </div>
+            </div>
+
+            <div class="section-hdr" style="margin-top:16px">
+                <span class="section-title">Active Tasks</span>
+            </div>
+            <div class="task-list">
+                <div class="task-item">
+                    <div class="task-dot" style="background:#f87171"></div>
+                    <span class="task-title">Deploy API gateway</span>
+                    <span class="task-agent">Eva</span>
+                    <span class="task-badge badge-high">High</span>
+                </div>
+                <div class="task-item">
+                    <div class="task-dot" style="background:#818cf8"></div>
+                    <span class="task-title">Review onboarding flow</span>
+                    <span class="task-agent">Milfred</span>
+                    <span class="task-badge badge-normal">Normal</span>
+                </div>
+                <div class="task-item">
+                    <div class="task-dot" style="background:#34d399"></div>
+                    <span class="task-title">Weekly report compiled</span>
+                    <span class="task-agent">Gordon</span>
+                    <span class="task-badge badge-done">Done</span>
+                </div>
+            </div>
+
+            <div class="section-hdr">
+                <span class="section-title">Agents</span>
+            </div>
+            <div class="agent-row">
+                <div class="agent-avatar">🤖</div>
+                <div><div class="agent-name">Milfred</div><div class="agent-status">Working on tasks</div></div>
+                <div class="status-dot"></div>
+            </div>
+            <div class="agent-row">
+                <div class="agent-avatar">📅</div>
+                <div><div class="agent-name">Eva</div><div class="agent-status">Scheduling · 2 tasks</div></div>
+                <div class="status-dot"></div>
+            </div>
+
+            <div class="progress-row">
+                <div class="progress-label"><span>Sprint Progress</span><span>68%</span></div>
+                <div class="progress-track"><div class="progress-fill" style="width:68%"></div></div>
+            </div>
+            <div class="progress-row">
+                <div class="progress-label"><span>Pipeline Health</span><span>91%</span></div>
+                <div class="progress-track"><div class="progress-fill" style="width:91%"></div></div>
+            </div>
+
+            <div class="chart-wrap">
+                <div class="chart-label">Tasks Completed · Last 7 days</div>
+                <div class="bar-chart">
+                    <div class="bar" style="height:30%"></div>
+                    <div class="bar" style="height:55%"></div>
+                    <div class="bar" style="height:40%"></div>
+                    <div class="bar" style="height:70%"></div>
+                    <div class="bar" style="height:50%"></div>
+                    <div class="bar" style="height:85%"></div>
+                    <div class="bar" style="height:100%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── DIRECTION B ─── -->
+    <div class="b">
+        <div class="direction-label">B — Command Center &nbsp;·&nbsp; Tactical / deep blue</div>
+        <div class="panel">
+            <div class="section-hdr">
+                <span class="section-title">// OVERVIEW</span>
+                <span class="section-action">VIEW ALL →</span>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-value">24</div>
+                    <div class="stat-label">TASKS ACTIVE</div>
+                    <div class="stat-delta">+3 TODAY</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">7</div>
+                    <div class="stat-label">AGENTS ONLINE</div>
+                    <div class="stat-delta">ALL NOMINAL</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">98%</div>
+                    <div class="stat-label">UPTIME</div>
+                    <div class="stat-delta">30D AVG</div>
+                </div>
+            </div>
+
+            <div class="section-hdr" style="margin-top:16px">
+                <span class="section-title">// ACTIVE TASKS</span>
+            </div>
+            <div class="task-list">
+                <div class="task-item">
+                    <div class="task-dot" style="background:#ff4466"></div>
+                    <span class="task-title">Deploy API gateway</span>
+                    <span class="task-agent">EVA</span>
+                    <span class="task-badge badge-high">CRIT</span>
+                </div>
+                <div class="task-item">
+                    <div class="task-dot" style="background:#00d4ff"></div>
+                    <span class="task-title">Review onboarding flow</span>
+                    <span class="task-agent">MILFRED</span>
+                    <span class="task-badge badge-normal">NRM</span>
+                </div>
+                <div class="task-item">
+                    <div class="task-dot" style="background:#00ff88"></div>
+                    <span class="task-title">Weekly report compiled</span>
+                    <span class="task-agent">GORDON</span>
+                    <span class="task-badge badge-done">DONE</span>
+                </div>
+            </div>
+
+            <div class="section-hdr">
+                <span class="section-title">// AGENT STATUS</span>
+            </div>
+            <div class="agent-row">
+                <div class="agent-avatar">🤖</div>
+                <div><div class="agent-name">Milfred</div><div class="agent-status">STA: WORKING · 2 TASKS</div></div>
+                <div class="status-dot"></div>
+            </div>
+            <div class="agent-row">
+                <div class="agent-avatar">📅</div>
+                <div><div class="agent-name">Eva</div><div class="agent-status">STA: SCHEDULING · 2 TASKS</div></div>
+                <div class="status-dot"></div>
+            </div>
+
+            <div class="progress-row">
+                <div class="progress-label"><span>SPRINT PROGRESS</span><span>68%</span></div>
+                <div class="progress-track"><div class="progress-fill" style="width:68%"></div></div>
+            </div>
+            <div class="progress-row">
+                <div class="progress-label"><span>PIPELINE HEALTH</span><span>91%</span></div>
+                <div class="progress-track"><div class="progress-fill" style="width:91%"></div></div>
+            </div>
+
+            <div class="chart-wrap">
+                <div class="chart-label">TASK THROUGHPUT · T-7D</div>
+                <div class="bar-chart">
+                    <div class="bar" style="height:30%"></div>
+                    <div class="bar" style="height:55%"></div>
+                    <div class="bar" style="height:40%"></div>
+                    <div class="bar" style="height:70%"></div>
+                    <div class="bar" style="height:50%"></div>
+                    <div class="bar" style="height:85%"></div>
+                    <div class="bar" style="height:100%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── DIRECTION C ─── -->
+    <div class="c">
+        <div class="direction-label">C — Noble Dark &nbsp;·&nbsp; Warm black + gold, minimal</div>
+        <div class="panel">
+            <div class="section-hdr">
+                <span class="section-title">Overview</span>
+                <span class="section-action">View all</span>
+            </div>
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-value">24</div>
+                    <div class="stat-label">Active Tasks</div>
+                    <div class="stat-delta">↑ 3 today</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">7</div>
+                    <div class="stat-label">Agents Online</div>
+                    <div class="stat-delta">All healthy</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value">98%</div>
+                    <div class="stat-label">Uptime</div>
+                    <div class="stat-delta">Last 30d</div>
+                </div>
+            </div>
+
+            <div class="section-hdr" style="margin-top:16px">
+                <span class="section-title">Active Tasks</span>
+            </div>
+            <div class="task-list">
+                <div class="task-item">
+                    <div class="task-dot" style="background:#f87171"></div>
+                    <span class="task-title">Deploy API gateway</span>
+                    <span class="task-agent">Eva</span>
+                    <span class="task-badge badge-high">High</span>
+                </div>
+                <div class="task-item">
+                    <div class="task-dot" style="background:#d4a843"></div>
+                    <span class="task-title">Review onboarding flow</span>
+                    <span class="task-agent">Milfred</span>
+                    <span class="task-badge badge-normal">Normal</span>
+                </div>
+                <div class="task-item">
+                    <div class="task-dot" style="background:#4ade80"></div>
+                    <span class="task-title">Weekly report compiled</span>
+                    <span class="task-agent">Gordon</span>
+                    <span class="task-badge badge-done">Done</span>
+                </div>
+            </div>
+
+            <div class="section-hdr">
+                <span class="section-title">Agents</span>
+            </div>
+            <div class="agent-row">
+                <div class="agent-avatar">🤖</div>
+                <div><div class="agent-name">Milfred</div><div class="agent-status">Working on tasks</div></div>
+                <div class="status-dot"></div>
+            </div>
+            <div class="agent-row">
+                <div class="agent-avatar">📅</div>
+                <div><div class="agent-name">Eva</div><div class="agent-status">Scheduling · 2 tasks</div></div>
+                <div class="status-dot"></div>
+            </div>
+
+            <div class="progress-row">
+                <div class="progress-label"><span>Sprint Progress</span><span>68%</span></div>
+                <div class="progress-track"><div class="progress-fill" style="width:68%"></div></div>
+            </div>
+            <div class="progress-row">
+                <div class="progress-label"><span>Pipeline Health</span><span>91%</span></div>
+                <div class="progress-track"><div class="progress-fill" style="width:91%"></div></div>
+            </div>
+
+            <div class="chart-wrap">
+                <div class="chart-label">Tasks Completed · Last 7 days</div>
+                <div class="bar-chart">
+                    <div class="bar" style="height:30%"></div>
+                    <div class="bar" style="height:55%"></div>
+                    <div class="bar" style="height:40%"></div>
+                    <div class="bar" style="height:70%"></div>
+                    <div class="bar" style="height:50%"></div>
+                    <div class="bar" style="height:85%"></div>
+                    <div class="bar" style="height:100%"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<p style="text-align:center;margin-top:48px;font-size:0.72rem;color:#333;letter-spacing:0.08em">
+    A = indigo/violet &nbsp;·&nbsp; B = cyan/deep navy &nbsp;·&nbsp; C = gold/warm black &nbsp;·&nbsp; or mix elements from all three
+</p>
+
+</body>
+</html>

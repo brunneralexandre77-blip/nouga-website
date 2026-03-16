@@ -990,9 +990,9 @@ function renderAgents(d) {
                Click an agent node to view details, tools &amp; memory
            </div>`;
 
-    // ISO org chart: Alex → [Ernst, Milfred → [Gordon, Lara, Claude, Hawk, Herzog]]
+    // ISO org chart: Alex → [Ernst, Milfred → [Eva, Gordon, Lara, Claude, Hawk, Herzog]]
     const herzog = d.agents?.find(a=>a.id==="herzog");
-    const mReports = (d.agents||[]).filter(a=>["gordon","lara","claude","hawk","herzog"].includes(a.id));
+    const mReports = (d.agents||[]).filter(a=>["eva","gordon","lara","claude","hawk","herzog"].includes(a.id));
 
     return `
         <div class="panel-header">
