@@ -5331,14 +5331,34 @@ async function initWorkflowsPanel(_, el) {
                     const meta = WF_META[r.workflow_id] || { emoji: "⚙️", label: r.workflow_id, color: "#888" };
                     const prog = _wfProgress(r.steps);
                     const task = (r.task||"").replace(/\/.+\s+/, "…").substring(0, 50);
-                    return `<tr>
+                    const steps = r.steps || [];
+                    const stepsInlineHtml = steps.map(s => {
+                        const statusColor = { done: "#22c55e", running: "#60a5fa", failed: "#f87171", waiting: "#555", pending: "#f5a623" }[s.status] || "#888";
+                        const icon = { done: "✓", running: "⟳", failed: "✗", waiting: "·", pending: "○" }[s.status] || "·";
+                        return `<div style="display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #ffffff08">
+                          <div style="width:20px;height:20px;border-radius:50%;background:${statusColor}22;border:2px solid ${statusColor};display:flex;align-items:center;justify-content:center;font-size:0.7rem;color:${statusColor};flex-shrink:0">${icon}</div>
+                          <div style="flex:1;min-width:0">
+                            <div style="font-size:0.82rem;font-weight:600">${escHtml(s.step_id || "")}</div>
+                            <div style="font-size:0.72rem;color:var(--text3,#888)">${escHtml(s.agent_id || "")}</div>
+                            ${s.output ? `<div style="margin-top:4px;padding:6px;background:#ffffff08;border-radius:4px;font-size:0.72rem;color:var(--text2,#aaa);white-space:pre-wrap;max-height:80px;overflow-y:auto;font-family:monospace">${escHtml(s.output.substring(0, 300))}${s.output.length > 300 ? "…" : ""}</div>` : ""}
+                          </div>
+                          <div style="font-size:0.7rem;color:${statusColor}">${s.status}</div>
+                        </div>`;
+                    }).join("");
+                    return `<tr data-run-id="${escHtml(r.id)}">
                         <td><span style="color:${meta.color};font-weight:600">${meta.emoji} ${meta.label}</span></td>
                         <td style="font-size:0.78rem;color:var(--text2);max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(task)}</td>
                         <td>${_wfStatusBadge(r.status)}</td>
                         <td style="min-width:100px">${prog.bar}</td>
                         <td style="font-size:0.75rem;color:var(--text3)">${escHtml(_wfCurrentStep(r.steps))}</td>
                         <td style="font-size:0.75rem;color:var(--text3)">${r.created_at ? new Date(r.created_at).toLocaleDateString() : "—"}</td>
-                        <td><button class="btn btn-ghost wf-view-btn" data-run-id="${escHtml(r.id)}" style="font-size:0.72rem;padding:2px 7px">View</button></td>
+                        <td style="white-space:nowrap">
+                            <button class="btn btn-ghost wf-step-toggle" data-run-id="${escHtml(r.id)}" style="font-size:0.72rem;padding:2px 7px">▼ Steps</button>
+                            <button class="btn btn-ghost wf-view-btn" data-run-id="${escHtml(r.id)}" style="font-size:0.72rem;padding:2px 7px">View</button>
+                        </td>
+                    </tr>
+                    <tr class="wf-steps-row" data-for-run="${escHtml(r.id)}" style="display:none">
+                        <td colspan="7" style="padding:8px 16px;background:#ffffff04">${stepsInlineHtml || '<div style="font-size:0.78rem;color:var(--text3);padding:8px 0">No step data available.</div>'}</td>
                     </tr>`;
                }).join("")}</tbody></table>`;
 
@@ -5579,6 +5599,16 @@ async function initWorkflowsPanel(_, el) {
         el.querySelectorAll(".wf-view-btn").forEach(btn => {
             btn.onclick = () => { const run = runs.find(r => r.id === btn.dataset.runId); if (run) _showRunDetail(run); };
         });
+        el.querySelectorAll(".wf-step-toggle").forEach(btn => {
+            btn.addEventListener("click", () => {
+                const runId = btn.dataset.runId;
+                const stepsRow = el.querySelector(`.wf-steps-row[data-for-run="${CSS.escape(runId)}"]`);
+                if (!stepsRow) return;
+                const isHidden = stepsRow.style.display === "none";
+                stepsRow.style.display = isHidden ? "table-row" : "none";
+                btn.textContent = isHidden ? "▲ Steps" : "▼ Steps";
+            });
+        });
     }
 
     el.querySelector("#agent-hub-refresh")?.addEventListener("click", reload);
@@ -5630,6 +5660,7 @@ function _showRunDetail(run) {
 function showNotif(msg, color = "green") {
     _showToast({ type: color === "red" ? "system" : "system", payload: { message: msg }, timestamp: new Date().toISOString() });
 }
+function showToast(msg, color = "green") { showNotif(msg, color); }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Panel map
