@@ -120,6 +120,10 @@ function initWebSocket() {
         console.log("[WS] Subscribed:", data);
     });
 
+    socket.on("chat_sync", data => {
+        _handleChatSync(data);
+    });
+
     socket.on("notification", notif => {
         _addNotif(notif);
         _showToast(notif);
@@ -5660,6 +5664,105 @@ function showToast(msg, color = "green") { showNotif(msg, color); }
 // ──────────────────────────────────────────────────────────────────────────────
 // Panel map
 // ──────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+// Messages Panel — cross-channel sync (Telegram, Dashboard, OpenClaw UI)
+// ──────────────────────────────────────────────────────────────────────────────
+const CHANNEL_LABELS = { telegram: "Telegram", dashboard: "Dashboard", openclaw: "OpenClaw", openclaw_reply: "OpenClaw" };
+const CHANNEL_ICONS  = { telegram: "✈️", dashboard: "🖥️", openclaw: "🦞", openclaw_reply: "🦞" };
+
+function _syncMsgBubble(m) {
+    const ch    = m.source_channel || "dashboard";
+    const icon  = CHANNEL_ICONS[ch]  || "💬";
+    const label = CHANNEL_LABELS[ch] || ch;
+    const ts    = m.created_at ? new Date(m.created_at).toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"}) : "";
+    const mid   = `msg-${m.source_msg_id || m.id || Date.now()}`;
+    let html = `<div class="sync-msg" id="${escHtml(mid)}">
+        <div class="sync-msg-header"><span class="sync-ch-badge">${icon} ${escHtml(label)}</span><span class="sync-ts">${ts}</span></div>
+        <div class="sync-user-bubble">${escHtml(m.user_msg || m.content || "")}</div>`;
+    if (m.agent_reply) {
+        html += `<div class="sync-agent-bubble">${escHtml(m.agent_reply)}</div>`;
+    }
+    html += `</div>`;
+    return html;
+}
+
+function renderMessages(data) {
+    const msgs = (data && data.messages) || [];
+    if (!msgs.length) return `<div class="panel-inner"><p style="color:var(--text3);padding:1rem">No messages yet. Send something from Telegram or the compose box below.</p></div>`;
+    return `<div class="panel-inner"><div id="sync-feed" style="display:flex;flex-direction:column;gap:10px;padding-bottom:80px">${msgs.map(_syncMsgBubble).join("")}</div></div>`;
+}
+
+function initMessagesPanel(data, el) {
+    const feed = document.getElementById("sync-feed");
+    if (feed) feed.scrollTop = feed.scrollHeight;
+
+    // Compose box (injected below the panel)
+    const existingBar = document.getElementById("msg-compose-bar");
+    if (!existingBar) {
+        const bar = document.createElement("div");
+        bar.id = "msg-compose-bar";
+        bar.style.cssText = "position:fixed;bottom:0;left:var(--sidebar-w,220px);right:0;padding:10px 16px;background:var(--bg2,#1a1a2e);border-top:1px solid var(--border1,#333);display:flex;gap:8px;z-index:200";
+        bar.innerHTML = `<input id="msg-compose-input" type="text" placeholder="Send a message to Milfred…" style="flex:1;padding:8px 12px;border-radius:8px;border:1px solid var(--border1,#444);background:var(--bg3,#222236);color:var(--text1,#fff);font-size:0.9rem">
+            <button id="msg-compose-send" style="padding:8px 16px;border-radius:8px;background:var(--blue2,#5b8def);color:#fff;border:none;cursor:pointer;font-size:0.9rem">Send</button>`;
+        document.body.appendChild(bar);
+
+        const sendMsg = async () => {
+            const inp = document.getElementById("msg-compose-input");
+            const text = inp ? inp.value.trim() : "";
+            if (!text) return;
+            inp.value = "";
+            try {
+                await apiPost("chat/ingest", { source_channel: "dashboard", content: text, user_name: "Alex" });
+            } catch(e) { console.error("[messages] send failed:", e); }
+        };
+        document.getElementById("msg-compose-send").addEventListener("click", sendMsg);
+        document.getElementById("msg-compose-input").addEventListener("keydown", e => { if (e.key === "Enter") sendMsg(); });
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// chat_sync real-time handler (called from initWebSocket)
+// ──────────────────────────────────────────────────────────────────────────────
+function _handleChatSync(data) {
+    // Bump badge if not on the messages panel
+    if (activePanel !== "messages") {
+        const badge = document.getElementById("messages-badge");
+        if (badge) { const n = (parseInt(badge.textContent)||0)+1; badge.textContent = n; badge.style.display = "flex"; }
+    }
+
+    const feed = document.getElementById("sync-feed");
+    if (!feed) return; // panel not open
+
+    if (data.type === "user_message") {
+        const mid = `msg-${data.source_msg_id || Date.now()}`;
+        if (!document.getElementById(mid)) {
+            const ch    = data.source_channel || "dashboard";
+            const icon  = CHANNEL_ICONS[ch]  || "💬";
+            const label = CHANNEL_LABELS[ch] || ch;
+            const ts    = new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+            feed.insertAdjacentHTML("beforeend", `<div class="sync-msg" id="${escHtml(mid)}">
+                <div class="sync-msg-header"><span class="sync-ch-badge">${icon} ${escHtml(label)}</span><span class="sync-ts">${ts}</span></div>
+                <div class="sync-user-bubble">${escHtml(data.content || "")}</div>
+            </div>`);
+            feed.scrollTop = feed.scrollHeight;
+        }
+    } else if (data.type === "agent_reply") {
+        const mid = `msg-${data.source_msg_id || ""}`;
+        const msgEl = mid !== "msg-" ? document.getElementById(mid) : null;
+        const replyHtml = `<div class="sync-agent-bubble">${escHtml(data.agent_response || "")}</div>`;
+        if (msgEl) {
+            if (!msgEl.querySelector(".sync-agent-bubble")) msgEl.insertAdjacentHTML("beforeend", replyHtml);
+        } else {
+            const ts = new Date().toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"});
+            feed.insertAdjacentHTML("beforeend", `<div class="sync-msg">
+                <div class="sync-msg-header"><span class="sync-ch-badge">🦞 Milfred</span><span class="sync-ts">${ts}</span></div>
+                ${replyHtml}
+            </div>`);
+        }
+        feed.scrollTop = feed.scrollHeight;
+    }
+}
+
 const PANELS = {
     tasks:     { fn: renderTasks,     endpoint: "tasks",    init: initTasksPanel   },
     agents:    { fn: renderAgents,    endpoint: "agents",   init: initAgentsPanel  },
@@ -5675,6 +5778,7 @@ const PANELS = {
     factory:   { fn: renderFactory,   endpoint: "factory",  init: initFactoryPanel },
     pipeline:  { fn: renderPipeline,  endpoint: "pipeline"                         },
     workflows: { fn: renderWorkflows, endpoint: null,        init: initWorkflowsPanel },
+    messages:  { fn: renderMessages,  endpoint: "chat/feed", init: initMessagesPanel  },
 };
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -5682,6 +5786,10 @@ const PANELS = {
 // ──────────────────────────────────────────────────────────────────────────────
 function navigate(panelId) {
     activePanel = panelId;
+    if (panelId === "messages") {
+        const badge = document.getElementById("messages-badge");
+        if (badge) { badge.textContent = "0"; badge.style.display = "none"; }
+    }
     document.querySelectorAll(".nav-item").forEach(el => {
         el.classList.toggle("active", el.dataset.panel === panelId);
     });

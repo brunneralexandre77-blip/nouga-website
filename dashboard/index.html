@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="dashboard.css?v=20260316j">
+    <link rel="stylesheet" href="dashboard.css?v=20260316k">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -126,6 +126,11 @@
                 <span class="nav-icon">🏢</span><span>Office</span>
                 <span class="nav-drag-handle" aria-hidden="true">⠿</span>
             </button>
+            <button class="nav-item" data-panel="messages">
+                <span class="nav-icon">💬</span><span>Messages</span>
+                <span class="nav-badge" id="messages-badge" style="display:none">0</span>
+                <span class="nav-drag-handle" aria-hidden="true">⠿</span>
+            </button>
         </div>
     </nav>
 
@@ -183,6 +188,6 @@
     </div>
 </footer>
 
-<script src="dashboard.js?v=20260316j"></script>
+<script src="dashboard.js?v=20260316k"></script>
 </body>
 </html>
