@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="dashboard.css?v=20260316e">
+    <link rel="stylesheet" href="dashboard.css?v=20260316f">
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.3/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
@@ -56,11 +56,6 @@
                 <span class="nav-icon">🗂️</span><span>Projects</span>
                 <span class="nav-drag-handle" aria-hidden="true">⠿</span>
             </button>
-            <button class="nav-item" data-panel="approvals">
-                <span class="nav-icon">✅</span><span>Approvals</span>
-                <span class="nav-badge">2</span>
-                <span class="nav-drag-handle" aria-hidden="true">⠿</span>
-            </button>
             <button class="nav-item" data-panel="calendar">
                 <span class="nav-icon">📅</span><span>Calendar</span>
                 <span class="nav-badge" id="cron-approval-badge" style="display:none">0</span>
@@ -83,10 +78,6 @@
             </button>
             <button class="nav-item" data-panel="council">
                 <span class="nav-icon">🏛️</span><span>Council</span>
-                <span class="nav-drag-handle" aria-hidden="true">⠿</span>
-            </button>
-            <button class="nav-item" data-panel="memory">
-                <span class="nav-icon">🧠</span><span>Memory</span>
                 <span class="nav-drag-handle" aria-hidden="true">⠿</span>
             </button>
             <button class="nav-item" data-panel="factory">
@@ -131,16 +122,8 @@
                 <span class="sidebar-label-text">People</span>
                 <span class="sidebar-label-grip" aria-hidden="true">⠿</span>
             </div>
-            <button class="nav-item" data-panel="people">
-                <span class="nav-icon">👥</span><span>People</span>
-                <span class="nav-drag-handle" aria-hidden="true">⠿</span>
-            </button>
             <button class="nav-item" data-panel="office">
                 <span class="nav-icon">🏢</span><span>Office</span>
-                <span class="nav-drag-handle" aria-hidden="true">⠿</span>
-            </button>
-            <button class="nav-item" data-panel="docs">
-                <span class="nav-icon">📚</span><span>Docs</span>
                 <span class="nav-drag-handle" aria-hidden="true">⠿</span>
             </button>
         </div>
@@ -151,14 +134,10 @@
         <div id="panel-tasks"     class="panel active"></div>
         <div id="panel-agents"    class="panel"></div>
         <div id="panel-content"   class="panel"></div>
-        <div id="panel-approvals" class="panel"></div>
         <div id="panel-council"   class="panel"></div>
         <div id="panel-calendar"  class="panel"></div>
         <div id="panel-messages"  class="panel"></div>
         <div id="panel-projects"  class="panel"></div>
-        <div id="panel-memory"    class="panel"></div>
-        <div id="panel-docs"      class="panel"></div>
-        <div id="panel-people"    class="panel"></div>
         <div id="panel-office"    class="panel"></div>
         <div id="panel-team"      class="panel"></div>
         <div id="panel-system"    class="panel"></div>
@@ -204,6 +183,6 @@
     </div>
 </footer>
 
-<script src="dashboard.js?v=20260316e"></script>
+<script src="dashboard.js?v=20260316f"></script>
 </body>
 </html>

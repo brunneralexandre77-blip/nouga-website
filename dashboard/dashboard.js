@@ -1097,7 +1097,6 @@ function renderAgentDetail(agent, d) {
             <button class="agent-tab-btn" data-tab="tasks">Tasks</button>
             <button class="agent-tab-btn" data-tab="soul">Soul</button>
             <button class="agent-tab-btn" data-tab="tools">Tools</button>
-            <button class="agent-tab-btn" data-tab="memory">Memory</button>
         </div>
 
         <div class="agent-tab-pane active" data-pane="role">
@@ -1137,35 +1136,7 @@ function renderAgentDetail(agent, d) {
                 </div>`).join("")}
             <button class="btn btn-primary" id="tools-save-${agent.id}" style="margin-top:10px;width:100%;font-size:0.8rem">Save Tool Access</button>
         </div>
-
-        <div class="agent-tab-pane" data-pane="memory">
-            <div style="margin-bottom:12px;padding:10px;background:var(--bg2);border-radius:7px;border:1px solid var(--border1)">
-                <div class="agent-detail-label" style="margin-bottom:6px">📚 Knowledge Base</div>
-                <div style="font-size:0.75rem;color:var(--text3);line-height:1.9">
-                    <div>📁 Soul: <code style="color:var(--text2)">04-Agents/${escHtml(agent.id)}/SOUL.md</code></div>
-                    <div>🗓 Memory: <code style="color:var(--text2)">04-Agents/${escHtml(agent.id)}/memory/YYYY-MM-DD.md</code></div>
-                    <div>🧰 Tools: <code style="color:var(--text2)">04-Agents/${escHtml(agent.id)}/TOOLS.md</code></div>
-                    <div>🧠 Storage: Obsidian (primary) · SuperMemory (search) · Workspace (backup)</div>
-                </div>
-            </div>
-            <div class="agent-detail-label" style="margin-bottom:8px">Memory Permissions</div>
-            <table class="memory-matrix">
-                <thead><tr><th>Agent</th><th>Read Own</th><th>Read All</th><th>Write</th></tr></thead>
-                <tbody>
-                    ${allAgents.map(a => {
-                        const p = MEMORY_PERMS[a.id] || {};
-                        const isMe = a.id === agent.id;
-                        return `<tr class="${isMe?"me":""}">
-                            <td>${a.emoji} ${a.name}</td>
-                            <td><label class="toggle-switch" style="width:28px;height:16px"><input type="checkbox"${p.read_own?" checked":""}><span class="toggle-slider"></span></label></td>
-                            <td><label class="toggle-switch" style="width:28px;height:16px"><input type="checkbox"${p.read_all?" checked":""}><span class="toggle-slider"></span></label></td>
-                            <td><label class="toggle-switch" style="width:28px;height:16px"><input type="checkbox"${p.write?" checked":""}><span class="toggle-slider"></span></label></td>
-                        </tr>`;
-                    }).join("")}
-                </tbody>
-            </table>
-            <div style="font-size:0.7rem;color:var(--text3);margin-top:8px">Highlighted row = viewing agent. Changes are cosmetic — connect to OpenClaw to enforce.</div>
-        </div>`;
+`;
 }
 
 function initAgentsPanel(data, container) {
@@ -1402,44 +1373,6 @@ function renderContent(d) {
             </div>
         </div></div>`;
 }
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Approvals (unchanged)
-// ──────────────────────────────────────────────────────────────────────────────
-function renderApprovals(d) {
-    return `
-        <div class="panel-header">
-            <div class="panel-title">✅ Approvals</div>
-            <div class="panel-subtitle">${d.pending.length} pending · ${d.approved.length} approved</div>
-        </div>
-        <div class="card" style="margin-bottom:16px">
-            <div class="card-title">⏳ Pending</div>
-            ${d.pending.map(a => `
-                <div style="padding:14px 0;border-bottom:1px solid var(--border)">
-                    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
-                        <div style="font-weight:600;color:#fff;font-size:0.9rem">${escHtml(a.title)}</div>
-                        ${badge(a.priority, a.priority==="high"?"red":"yellow")}
-                    </div>
-                    <div style="font-size:0.82rem;color:var(--text2);margin-bottom:8px">${escHtml(a.description)}</div>
-                    <div style="display:flex;gap:12px;font-size:0.75rem;color:var(--text3)">
-                        <span>From: <b style="color:var(--text2)">${a.requester}</b></span>
-                        <span>Approver: <b style="color:var(--text2)">${a.approver}</b></span>
-                        <span>${a.created}</span>
-                    </div>
-                </div>`).join("")}
-        </div>
-        <div class="card">
-            <div class="card-title">✅ Approved</div>
-            ${d.approved.map(a => `
-                <div style="padding:10px 0;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center">
-                    <span style="font-size:0.85rem;color:var(--text)">${escHtml(a.title)}</span>
-                    <div style="display:flex;gap:8px;align-items:center;font-size:0.75rem;color:var(--text3)">
-                        ${a.approved_on} ${badge("approved","green")}
-                    </div>
-                </div>`).join("")}
-        </div>`;
-}
-
 // ──────────────────────────────────────────────────────────────────────────────
 // Council — Deliberation Chamber
 // ──────────────────────────────────────────────────────────────────────────────
@@ -2648,79 +2581,6 @@ function initTaskDragDrop(tasks, project) {
             renderTaskList(_taskViewTasks, project);
         });
     });
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Memory (unchanged)
-// ──────────────────────────────────────────────────────────────────────────────
-function renderMemory(d) {
-    return `
-        <div class="panel-header">
-            <div class="panel-title">🧠 Memory</div>
-            <div class="panel-subtitle">${d.total_files} journal files · SuperMemory: ${badge(d.supermemory_status,"green")}</div>
-        </div>
-        <div class="grid-2">
-            ${d.entries.slice(0,6).map(e => `
-                <div class="card">
-                    <div style="display:flex;justify-content:space-between;margin-bottom:8px">
-                        <div style="font-weight:600;color:#fff;font-size:0.88rem">📅 ${e.date}</div>
-                        <span style="font-size:0.72rem;color:var(--text3)">${e.size} chars</span>
-                    </div>
-                    <div style="font-size:0.8rem;color:var(--text2);line-height:1.6;white-space:pre-wrap">${escHtml(e.preview.slice(0,200))}${e.preview.length>200?"…":""}</div>
-                </div>`).join("")}
-        </div>`;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Docs (unchanged)
-// ──────────────────────────────────────────────────────────────────────────────
-function renderDocs(d) {
-    const catColor = c => c==="security"?"red":"blue";
-    return `
-        <div class="panel-header">
-            <div class="panel-title">📚 Docs</div>
-            <div class="panel-subtitle">${d.total} documents</div>
-        </div>
-        <div class="card">
-            <table class="table">
-                <thead><tr><th>Name</th><th>Category</th><th>Modified</th><th>Size</th></tr></thead>
-                <tbody>
-                    ${d.docs.map(doc => `
-                        <tr>
-                            <td style="font-weight:600">📄 ${escHtml(doc.name)}</td>
-                            <td>${badge(doc.category, catColor(doc.category))}</td>
-                            <td style="color:var(--text2);font-size:0.8rem">${doc.modified}</td>
-                            <td style="color:var(--text3);font-size:0.78rem">${doc.size} chars</td>
-                        </tr>`).join("")}
-                </tbody>
-            </table>
-        </div>`;
-}
-
-// ──────────────────────────────────────────────────────────────────────────────
-// People (unchanged)
-// ──────────────────────────────────────────────────────────────────────────────
-function renderPeople(d) {
-    return `
-        <div class="panel-header">
-            <div class="panel-title">👥 People</div>
-            <div class="panel-subtitle">Team directory</div>
-        </div>
-        <div class="grid-2">
-            ${d.people.map(p => `
-                <div class="person-card">
-                    <div class="agent-avatar">${p.emoji}</div>
-                    <div style="flex:1">
-                        <div style="font-weight:700;color:#fff;font-size:0.95rem">${p.name}</div>
-                        <div style="font-size:0.78rem;color:var(--blue2);font-weight:600;margin-top:2px">${p.title}</div>
-                        <div style="font-size:0.8rem;color:var(--text2);margin-top:6px">${p.role}</div>
-                        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
-                            ${badge(p.status,"green")}
-                            <span style="font-size:0.72rem;color:var(--text3)">${p.contact}</span>
-                        </div>
-                    </div>
-                </div>`).join("")}
-        </div>`;
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -5803,13 +5663,9 @@ const PANELS = {
     tasks:     { fn: renderTasks,     endpoint: "tasks",    init: initTasksPanel   },
     agents:    { fn: renderAgents,    endpoint: "agents",   init: initAgentsPanel  },
     content:   { fn: renderContent,   endpoint: "content"                          },
-    approvals: { fn: renderApprovals, endpoint: "approvals"                        },
     council:   { fn: renderCouncil,   endpoint: "council",  init: initCouncilPanel },
     calendar:  { fn: renderCalendar,  endpoint: "calendar", init: initCalendarPanel},
     projects:  { fn: renderProjects,  endpoint: "projects", init: initProjectsPanel },
-    memory:    { fn: renderMemory,    endpoint: "memory"                           },
-    docs:      { fn: renderDocs,      endpoint: "docs"                             },
-    people:    { fn: renderPeople,    endpoint: "people"                           },
     office:    { fn: renderOffice,    endpoint: "office",   init: initOfficePanel  },
     team:      { fn: renderTeam,      endpoint: "team",    init: initTeamPanel     },
     system:    { fn: renderSystem,    endpoint: "system",   init: initSystemPanel  },
@@ -5986,98 +5842,6 @@ const FLOAT_AGENTS = [
     { id: "lara",    name: "Lara",   emoji: "📱" },
     { id: "alex",    name: "Alex",   emoji: "👔" },
 ];
-
-// ──────────────────────────────────────────────────────────────────────────────
-// Floating Tasks Widget
-// ──────────────────────────────────────────────────────────────────────────────
-function initFloatingTasks() {
-    const saved = JSON.parse(localStorage.getItem("floatTasks") || "{}");
-    let collapsed = saved.collapsed !== false;
-    let filterAgent = saved.agent || "all";
-    let widgetW = saved.w || 310;
-    let bodyH   = saved.h || 280;
-
-    const widget = document.createElement("div");
-    widget.id = "float-tasks";
-
-    // Position: bottom-right, to the left of the chat widget
-    const posX = saved.x ?? (window.innerWidth  - 640);
-    const posY = saved.y ?? (window.innerHeight - 44 - 48);
-    widget.style.cssText = `
-        position:fixed;left:${posX}px;top:${posY}px;z-index:9998;
-        font-size:0.82rem;
-        background:var(--bg1,#141420);border:1px solid var(--border1,#2a2a40);
-        border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.6);
-        display:flex;flex-direction:column;overflow:hidden;
-        user-select:none;
-    `;
-    widget.style.width = widgetW + "px";
-    document.body.appendChild(widget);
-
-    function _persist() {
-        const rect = widget.getBoundingClientRect();
-        localStorage.setItem("floatTasks", JSON.stringify({ collapsed, agent: filterAgent, x: rect.left, y: rect.top, w: Math.round(widget.offsetWidth), h: bodyH }));
-    }
-
-    const resizer = enableResizeWidget(widget, () => widget.querySelector("#ftw-body"), (w, h) => { widgetW = w; bodyH = h; _persist(); });
-
-    async function _render() {
-        const agentOpts = `<option value="all"${filterAgent==="all"?" selected":""}>All Agents</option>`
-            + FLOAT_AGENTS.map(a => `<option value="${a.id}"${filterAgent===a.id?" selected":""}>${a.emoji} ${a.name}</option>`).join("");
-        widget.innerHTML = `
-            <div id="ftw-header" style="display:flex;align-items:center;gap:8px;padding:8px 10px;cursor:pointer;background:var(--bg2,#1a1a2e);border-bottom:1px solid var(--border1,#2a2a40)">
-                <span style="font-size:1rem">📋</span>
-                <span style="flex:1;font-size:0.8rem;font-weight:600;color:#fff">Tasks</span>
-                <select id="ftw-agent-sel" style="background:transparent;border:none;color:var(--text2,#aaa);font-size:0.72rem;cursor:pointer;max-width:100px" onclick="event.stopPropagation()">
-                    ${agentOpts}
-                </select>
-                <span id="ftw-toggle" style="color:var(--text3,#888);font-size:0.75rem;padding:2px 6px">${collapsed ? "▼" : "▲"}</span>
-            </div>
-            <div id="ftw-body" style="display:${collapsed ? "none" : "flex"};flex-direction:column;height:${bodyH}px;overflow-y:auto;padding:6px 8px">
-                <div style="color:var(--text3,#888);font-size:0.75rem;text-align:center;padding:12px 0" id="ftw-loading">Loading…</div>
-            </div>`;
-        resizer.reattach();
-
-        if (!collapsed) {
-            try {
-                const data = await fetchData("tasks");
-                const all = [...(data.todo || []), ...(data.in_progress || []), ...(data.done || [])];
-                const filtered = filterAgent === "all" ? all
-                    : all.filter(t => t.assignee?.toLowerCase() === filterAgent);
-                const body = widget.querySelector("#ftw-body");
-                if (!filtered.length) {
-                    body.innerHTML = `<div style="color:var(--text3,#888);font-size:0.75rem;text-align:center;padding:12px 0">No tasks</div>`;
-                } else {
-                    body.innerHTML = filtered.slice(0, 20).map(t => `
-                        <div style="padding:5px 2px;border-bottom:1px solid var(--border1,#2a2a40);display:flex;gap:8px;align-items:flex-start">
-                            <span style="font-size:0.7rem;min-width:14px;color:${_taskStatusColor(t.status)};margin-top:2px">${_taskStatusLabel(t.status)}</span>
-                            <div style="flex:1;min-width:0">
-                                <div style="color:var(--text1,#eee);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHtml(t.title)}</div>
-                                <div style="font-size:0.68rem;color:var(--text3,#888)">${escHtml(t.assignee||"")}${t.tag ? ` · ${escHtml(t.tag)}` : ""}</div>
-                            </div>
-                        </div>`).join("");
-                }
-            } catch(e) {
-                widget.querySelector("#ftw-body").innerHTML = `<div style="color:var(--red,#f87171);font-size:0.75rem;padding:8px">${escHtml(e.message)}</div>`;
-            }
-        }
-
-        // Events
-        widget.querySelector("#ftw-header").addEventListener("click", () => {
-            collapsed = !collapsed; _persist(); _render();
-        });
-        widget.querySelector("#ftw-agent-sel").addEventListener("change", e => {
-            filterAgent = e.target.value; _persist(); _render();
-        });
-    }
-
-    enableDragWidget(widget, _persist, ["SELECT", "BUTTON"]);
-
-    // Refresh tasks every 30s when expanded
-    setInterval(() => { if (!collapsed) _render(); }, 30000);
-
-    _render();
-}
 
 function initFloatingChat() {
     // Restore persisted state
@@ -6344,7 +6108,6 @@ document.addEventListener("DOMContentLoaded", () => {
     startRefresh();
     checkHealth();
     initWebSocket();
-    initFloatingTasks();
     initFloatingChat();
     setInterval(updateClock,      1000);
     setInterval(updateStatusBar,  5000);
