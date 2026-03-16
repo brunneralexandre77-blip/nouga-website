@@ -3469,3 +3469,127 @@ body {
     box-shadow: 0 16px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03) inset;
 }
 
+/* ══════════════════════════════════════════════════════════
+   NOBLE DARK — Part II
+   Variable unification + remaining element polish
+══════════════════════════════════════════════════════════ */
+
+/* ── Unify legacy bg tokens with Noble Dark surfaces ── */
+:root {
+    --bg:      #0c0c0e;
+    --bg1:     #111110;
+    --bg2:     #171614;
+    --bg3:     #1e1c19;
+    --border:  rgba(201,150,58,0.08);
+    --border2: rgba(201,150,58,0.16);
+}
+
+/* ── Panel fade-in ── */
+.panel.active {
+    animation: panelIn 0.2s var(--ease-out) both;
+}
+@keyframes panelIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* ── Calendar ── */
+.cal-grid-wrap {
+    background: var(--surface-2);
+    border: 1px solid rgba(201,150,58,0.12);
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.45);
+}
+.cal-header-cell {
+    background: var(--surface-3);
+    color: rgba(201,150,58,0.55);
+    border-bottom: 1px solid rgba(201,150,58,0.1);
+    letter-spacing: 0.06em;
+}
+.cal-header-cell:first-child { background: var(--surface-3); }
+.cal-time-cell {
+    color: rgba(90,82,72,0.65);
+    border-right: 1px solid rgba(201,150,58,0.06);
+    font-size: 0.63rem;
+}
+.cal-cell { border-bottom: 1px solid rgba(255,255,255,0.02); }
+
+/* ── Workflow list items ── */
+.wf-list-item {
+    background: linear-gradient(160deg, var(--surface-3) 0%, var(--surface-2) 100%);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-top: 1px solid rgba(201,150,58,0.14);
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+    margin-bottom: 14px;
+}
+.wf-list-item:hover {
+    border-color: rgba(255,255,255,0.07);
+    border-top-color: rgba(201,150,58,0.28);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+.wf-flow-detail {
+    background: var(--surface-1);
+    border-top: 1px solid rgba(201,150,58,0.08);
+}
+.wf-step-popover {
+    background: var(--surface-4);
+    border: 1px solid rgba(201,150,58,0.25);
+    box-shadow: 0 16px 48px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.03) inset;
+}
+
+/* ── Radar SVG — gold scheme ── */
+.radar-axis { stroke: rgba(201,150,58,0.12); }
+.radar-ring { stroke: rgba(201,150,58,0.14); opacity: 0.8; }
+.radar-area { fill: rgba(201,150,58,0.1); stroke: var(--gold); stroke-width: 2; }
+.radar-dot  { fill: var(--gold-light); filter: drop-shadow(0 0 4px rgba(201,150,58,0.5)); }
+.radar-label { fill: rgba(138,128,112,0.75); font-size: 9.5px; }
+
+/* ── Notification drawer ── */
+.notif-drawer {
+    background: linear-gradient(180deg, var(--surface-2) 0%, var(--surface-1) 100%);
+    border-left: 1px solid rgba(201,150,58,0.15);
+    box-shadow: -12px 0 40px rgba(0,0,0,0.65);
+}
+.notif-drawer-header {
+    background: var(--surface-3);
+    border-bottom: 1px solid rgba(201,150,58,0.1);
+}
+.notif-drawer-title { color: var(--gold-light); letter-spacing: 0.01em; }
+.notif-item { border-bottom: 1px solid rgba(255,255,255,0.04); }
+.notif-item:hover { background: rgba(201,150,58,0.035); }
+
+/* ── Council chamber — Noble Dark ── */
+.council-avatar {
+    background: var(--surface-3);
+    border: 2px solid rgba(201,150,58,0.2);
+}
+.deliberation-result {
+    background: linear-gradient(160deg, var(--surface-3) 0%, var(--surface-2) 100%);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-top: 1px solid rgba(201,150,58,0.12);
+    box-shadow: 0 2px 12px rgba(0,0,0,0.4);
+}
+.consensus-box {
+    background: rgba(201,150,58,0.06);
+    border: 1px solid rgba(201,150,58,0.22);
+}
+.consensus-label { color: var(--gold-light); }
+
+/* ── Network — gold "up" state ── */
+.net-node-box.up { border-color: rgba(201,150,58,0.45); }
+
+/* ── Service rows ── */
+.service-row { border-bottom: 1px solid rgba(255,255,255,0.04); }
+
+/* ── Loading spinner ── */
+.spinner {
+    border-color: rgba(201,150,58,0.15);
+    border-top-color: var(--gold);
+}
+
+/* ── Version / alert rows ── */
+.version-row, .alert-row, .check-item {
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+}
+
