@@ -1658,13 +1658,38 @@ body.night .office2d { background: rgba(5,5,12,0.9); }
 .wf-list-item {
     border: 1px solid var(--border);
     border-radius: var(--radius-sm);
-    margin-bottom: 8px;
+    margin-bottom: 12px;
     overflow: hidden;
     transition: border-color 0.15s;
+    background: var(--bg1);
 }
 .wf-list-item:hover { border-color: var(--border2); }
-.wf-list-item .step-item { border-bottom: none; border-radius: 0; }
-.wf-flow-detail .wf-flow { flex-wrap: wrap; gap: 4px; }
+.wf-summary-row { padding: 10px 12px; cursor: default; }
+.wf-summary-header {
+    display: flex; align-items: center; gap: 8px;
+    margin-bottom: 2px;
+}
+.wf-flow-detail {
+    padding: 0 12px 12px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+}
+.wf-flow-detail .wf-flow { flex-wrap: wrap; gap: 6px; padding: 12px 4px 4px 4px; }
+.wf-node-box:active { transform: scale(0.97); }
+/* Step detail popover */
+.wf-step-popover {
+    position: absolute;
+    z-index: 9999;
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    box-shadow: var(--shadow-lg);
+    min-width: 180px; max-width: 260px;
+    pointer-events: none;
+}
+.wf-step-popover-title { font-size: 0.8rem; font-weight: 700; color: #fff; margin-bottom: 4px; }
+.wf-step-popover-body  { font-size: 0.75rem; color: var(--text2); line-height: 1.5; }
 .chip-notify { background: rgba(239,68,68,0.15); color: #f87171; }
 
 /* ── Notification Bell ── */

@@ -1670,41 +1670,62 @@ function initCalendarPanel(data, container) {
     });
 
     // Drag-and-drop: move job to a new hour
+    // Use event delegation on the grid wrap so job blocks inside cells don't intercept events
     let _dragJobId = null;
     container.querySelectorAll(".cal-job-block[draggable='true']").forEach(block => {
         block.addEventListener("dragstart", e => {
             _dragJobId = parseInt(block.dataset.jobId);
             e.dataTransfer.effectAllowed = "move";
             e.dataTransfer.setData("text/plain", String(block.dataset.jobId));
-            // Use cal-dragging class (pointer-events:none) so sibling blocks don't block drop targets
             requestAnimationFrame(() => block.classList.add("cal-dragging"));
         });
         block.addEventListener("dragend", () => {
             block.classList.remove("cal-dragging");
             container.querySelectorAll(".cal-cell-drop").forEach(c => c.classList.remove("cal-cell-drop"));
-        });
-    });
-
-    container.querySelectorAll(".cal-cell").forEach((cell, idx) => {
-        const hour = Math.floor(idx / 7); // 7 day columns
-        cell.addEventListener("dragover", e => { e.preventDefault(); cell.classList.add("cal-cell-drop"); });
-        cell.addEventListener("dragleave", () => cell.classList.remove("cal-cell-drop"));
-        cell.addEventListener("drop", async e => {
-            e.preventDefault();
-            cell.classList.remove("cal-cell-drop");
-            const jobId = _dragJobId ?? parseInt(e.dataTransfer.getData("text/plain"));
-            if (!jobId && jobId !== 0) return;
-            const job = (data.cron_jobs || []).find(j => j.id === jobId);
-            if (!job || job.is_repeating) return;
-            const newSchedule = `0 ${hour} * * *`;
-            try {
-                await apiPut(`cron/${jobId}`, { schedule: newSchedule, command: job.command });
-                showToast(`✅ Moved to ${String(hour).padStart(2,"0")}:00`, "green");
-                loadPanel("calendar");
-            } catch(e) { showToast("❌ Failed to move job", "red"); }
             _dragJobId = null;
         });
     });
+
+    const allCells = [...container.querySelectorAll(".cal-cell")];
+    const gridWrap = container.querySelector(".cal-grid-wrap");
+    if (gridWrap) {
+        gridWrap.addEventListener("dragover", e => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = "move";
+            const cell = e.target.closest(".cal-cell");
+            if (cell) {
+                allCells.forEach(c => c.classList.remove("cal-cell-drop"));
+                cell.classList.add("cal-cell-drop");
+            }
+        });
+        gridWrap.addEventListener("dragleave", e => {
+            if (!gridWrap.contains(e.relatedTarget)) {
+                allCells.forEach(c => c.classList.remove("cal-cell-drop"));
+            }
+        });
+        gridWrap.addEventListener("drop", async e => {
+            e.preventDefault();
+            allCells.forEach(c => c.classList.remove("cal-cell-drop"));
+            const cell = e.target.closest(".cal-cell");
+            if (!cell) return;
+            const idx = allCells.indexOf(cell);
+            if (idx < 0) return;
+            const hour = Math.floor(idx / 7);
+            const jobId = _dragJobId != null ? _dragJobId : parseInt(e.dataTransfer.getData("text/plain"));
+            if (isNaN(jobId) || jobId == null) return;
+            const job = (data.cron_jobs || []).find(j => j.id === jobId);
+            if (!job) return;
+            if (job.is_repeating) { showToast("↻ Repeating jobs can't be moved", "yellow"); return; }
+            const newSchedule = `0 ${hour} * * *`;
+            try {
+                // PUT /api/cron expects id in the body, not in the URL
+                await apiPut("cron", { id: jobId, schedule: newSchedule, command: job.command });
+                showToast(`✅ "${job.name}" moved to ${String(hour).padStart(2,"0")}:00`, "green");
+                loadPanel("calendar");
+            } catch(ex) { showToast("❌ Failed to move job", "red"); }
+            _dragJobId = null;
+        });
+    }
 
     // Add job button
     container.querySelector("#cal-add-job")?.addEventListener("click", () => showCronModal(null, null));
@@ -4576,43 +4597,56 @@ function renderRadar(d) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Factory — Automation Workshop
 // ──────────────────────────────────────────────────────────────────────────────
-// Example workflow definitions shown as visual flow diagrams
+// Step definitions for known workflows — keyed by workflow name slug
+const WF_STEPS = {
+    "bug-fix": {
+        emoji: "🐛",
+        desc: "Reproduce the bug, trace root cause, patch, verify and deploy",
+        steps: [
+            { type: "trigger",   label: "🐛 Bug Reported",         detail: "Issue created via dashboard or API" },
+            { type: "action",    label: "🔍 Investigate",          detail: "Milfred: reproduce + trace root cause" },
+            { type: "condition", label: "❓ Root Cause Found?",    detail: "If unclear, escalate to council" },
+            { type: "action",    label: "💻 Write Fix",            detail: "Milfred: patch code + write tests" },
+            { type: "action",    label: "🧪 Run Tests",            detail: "Verify fix, no regressions" },
+            { type: "notify",    label: "✅ Deploy & Close",       detail: "Push to prod, close issue, notify team" },
+        ],
+    },
+    "feature-dev": {
+        emoji: "✨",
+        desc: "Plan, implement and ship a new feature through review and deployment",
+        steps: [
+            { type: "trigger",   label: "✨ Feature Requested",    detail: "New task created in Agent Hub" },
+            { type: "action",    label: "📐 Plan",                 detail: "Milfred: break into sub-tasks, estimate" },
+            { type: "action",    label: "💻 Implement",            detail: "Milfred: write code, follow conventions" },
+            { type: "action",    label: "🔍 Self-Review",          detail: "Milfred: refactor, check edge cases" },
+            { type: "condition", label: "❓ Approved?",            detail: "Human or council sign-off required" },
+            { type: "notify",    label: "🚀 Merge & Deploy",       detail: "Push to production, update dashboard" },
+        ],
+    },
+    "security-audit": {
+        emoji: "🔍",
+        desc: "Daily full security scan: ports, auth logs, fail2ban, threat report",
+        steps: [
+            { type: "trigger",   label: "⏰ Scheduled Trigger",    detail: "Daily cron — every morning" },
+            { type: "action",    label: "🌐 Ernst: Port Scan",     detail: "Nmap all open ports, diff vs baseline" },
+            { type: "action",    label: "🛡️ Fail2ban Check",       detail: "Ernst: review banned IPs, patterns" },
+            { type: "action",    label: "📋 Log Audit",            detail: "Ernst: parse auth + system logs" },
+            { type: "condition", label: "❓ Threats Found?",       detail: "Severity threshold: MEDIUM or higher" },
+            { type: "action",    label: "📝 Write Report",         detail: "Ernst: document findings, recommend fixes" },
+            { type: "notify",    label: "📬 Alert Alex",           detail: "Dashboard card + Telegram message" },
+        ],
+    },
+};
+// Legacy name mapping for WF_EXAMPLES compatibility
 const WF_EXAMPLES = [
-    {
-        name: "Morning Briefing",
-        emoji: "🌅",
-        desc: "Daily 08:00 startup routine — briefing, market check, security scan",
-        steps: [
-            { type: "trigger",   label: "⏰ Cron 08:00",          detail: "Every weekday" },
-            { type: "action",    label: "📅 Eva: CEO Briefing",    detail: "Compile overnight events" },
-            { type: "action",    label: "📈 Gordon: Market Check", detail: "BTC/ETH positions" },
-            { type: "action",    label: "🔒 Ernst: Security Scan", detail: "Fail2ban + port scan" },
-            { type: "notify",    label: "💬 Telegram Summary",     detail: "Send to Alex" },
-        ],
-    },
-    {
-        name: "Security Alert",
-        emoji: "🚨",
-        desc: "Triggered on intrusion detection — escalates through Ernst to Alex",
-        steps: [
-            { type: "trigger",   label: "🔔 Fail2Ban Alert",       detail: "SSH brute-force detected" },
-            { type: "condition", label: "❓ Severity ≥ HIGH?",     detail: "Check alert level" },
-            { type: "action",    label: "🔒 Ernst: Block IP",      detail: "Add to deny list" },
-            { type: "action",    label: "📝 Ernst: Write Report",  detail: "Incident log entry" },
-            { type: "notify",    label: "🚨 Alert Alex",           detail: "Telegram + dashboard" },
-        ],
-    },
-    {
-        name: "Content Pipeline",
-        emoji: "✍️",
-        desc: "Lara drafts social posts from research, queued for approval",
-        steps: [
-            { type: "trigger",   label: "🔔 New Topic Added",      detail: "Via dashboard or API" },
-            { type: "action",    label: "🔍 Milfred: Research",    detail: "Web search + summarise" },
-            { type: "action",    label: "✍️ Lara: Draft Posts",    detail: "Twitter / LinkedIn / FB" },
-            { type: "condition", label: "❓ Needs Approval?",      detail: "Check content policy" },
-            { type: "notify",    label: "✅ Queue for Review",     detail: "Appears in Approvals" },
-        ],
+    { name: "Morning Briefing", emoji: "🌅", desc: "Daily 08:00 startup routine — briefing, market check, security scan",
+      steps: [
+        { type: "trigger",   label: "⏰ Cron 08:00",          detail: "Every weekday" },
+        { type: "action",    label: "📅 Eva: CEO Briefing",    detail: "Compile overnight events" },
+        { type: "action",    label: "📈 Gordon: Market Check", detail: "BTC/ETH positions" },
+        { type: "action",    label: "🔒 Ernst: Security Scan", detail: "Fail2ban + port scan" },
+        { type: "notify",    label: "💬 Telegram Summary",     detail: "Send to Alex" },
+      ],
     },
 ];
 
@@ -4628,53 +4662,43 @@ function wfFlowHtml(steps) {
 }
 
 function renderFactory(d) {
-    // Build step data for API workflows using WF_EXAMPLES as lookup
-    const wfStepsLookup = {};
-    WF_EXAMPLES.forEach(ex => { wfStepsLookup[ex.name.toLowerCase()] = ex; });
-
     const workflowRows = (d.workflows || []).map(w => {
-        const exMatch = wfStepsLookup[w.name.toLowerCase()];
-        const hasSteps = exMatch && exMatch.steps;
+        const slug = (w.id || w.name || "").toLowerCase();
+        const wfDef = WF_STEPS[slug];
+        const emoji = wfDef?.emoji || w.emoji || "⚙️";
+        const desc  = wfDef?.desc  || "";
+        const steps = wfDef?.steps || null;
+
         return `
-        <div class="wf-list-item" data-workflow-id="${escHtml(w.id||w.name)}">
-            <div class="step-item wf-summary-row" style="cursor:pointer" data-wf-toggle="${escHtml(w.id||w.name)}">
-                <span class="step-number">⠿</span>
-                <span style="font-size:1rem">${w.emoji||"⚙️"}</span>
-                <div style="flex:1">
-                    <div class="service-name">${escHtml(w.name)}</div>
-                    <div class="service-port">${w.steps||0} steps · last: ${escHtml(w.last_run||"never")}</div>
+        <div class="wf-list-item" data-workflow-id="${escHtml(slug)}">
+            <div class="wf-summary-row" data-wf-toggle="${escHtml(slug)}">
+                <div class="wf-summary-header">
+                    <span style="font-size:1.2rem;flex-shrink:0">${emoji}</span>
+                    <div style="flex:1">
+                        <div class="service-name">${escHtml(w.name)}</div>
+                        <div class="service-port">${steps ? steps.length : (w.steps||0)} steps · last run: ${escHtml(w.last_run||"never")}</div>
+                    </div>
+                    ${statusBadge(w.status)}
+                    <button class="btn btn-ghost wf-collapse-btn" data-wf="${escHtml(slug)}" style="padding:4px 8px;font-size:0.72rem;flex-shrink:0" title="Collapse">▲</button>
+                    <button class="btn btn-ghost edit-wf-btn" data-id="${escHtml(slug)}" style="padding:4px 8px;font-size:0.72rem;flex-shrink:0">✏️</button>
+                    <button class="btn btn-ghost run-wf-btn" style="padding:4px 8px;font-size:0.72rem;flex-shrink:0">▶ Run</button>
                 </div>
-                ${statusBadge(w.status)}
-                ${hasSteps ? `<button class="btn btn-ghost wf-flow-toggle" data-wf="${escHtml(w.id||w.name)}" style="padding:4px 8px;font-size:0.72rem" title="Toggle visual flow">📊</button>` : ""}
-                <button class="btn btn-ghost edit-wf-btn" data-id="${escHtml(w.id||w.name)}" style="padding:4px 8px;font-size:0.72rem">✏️</button>
-                <button class="btn btn-ghost run-wf-btn" style="padding:4px 8px;font-size:0.72rem">▶ Run</button>
+                ${desc ? `<div style="font-size:0.75rem;color:var(--text3);padding:4px 0 8px 0">${escHtml(desc)}</div>` : ""}
             </div>
-            ${hasSteps ? `
-            <div class="wf-flow-detail" id="wf-detail-${escHtml(w.id||w.name)}" style="display:none;padding:8px 12px 12px 12px;border-top:1px solid var(--border);background:var(--bg)">
-                <div class="wf-flow-label" style="margin-bottom:8px">${escHtml(exMatch.desc||"")}</div>
-                ${wfFlowHtml(exMatch.steps)}
-            </div>` : ""}
+            <div class="wf-flow-detail" id="wf-detail-${escHtml(slug)}">
+                ${steps
+                    ? wfFlowHtml(steps)
+                    : `<div style="padding:12px;color:var(--text3);font-size:0.8rem;text-align:center">No step definitions yet — click ✏️ to add steps</div>`}
+            </div>
         </div>`;
     });
-
-    const templateCards = WF_EXAMPLES.map(ex => `
-        <div class="wf-example-card">
-            <div class="wf-example-header">
-                <span style="font-size:1.4rem">${ex.emoji}</span>
-                <div>
-                    <div class="wf-example-name">${escHtml(ex.name)}</div>
-                    <div class="wf-example-desc">${escHtml(ex.desc)}</div>
-                </div>
-            </div>
-            ${wfFlowHtml(ex.steps)}
-        </div>`).join("");
 
     return `
         <div class="panel-header">
             <div class="panel-title">🏭 Automation Workshop</div>
-            <div class="panel-subtitle">Active workflows · drag to reorder · click 📊 to view steps · ${d.workflows?.length || 0} workflows</div>
+            <div class="panel-subtitle">${d.workflows?.length || 0} active workflows · each step is clickable for details</div>
         </div>
-        <div class="card" style="margin-bottom:16px">
+        <div class="card">
             <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
                 Active Workflows
                 <button class="btn btn-primary" id="new-workflow-btn" style="padding:4px 10px;font-size:0.75rem">+ New Workflow</button>
@@ -4684,41 +4708,48 @@ function renderFactory(d) {
                     ? `<div style="padding:24px;text-align:center;color:var(--text3);font-size:0.85rem">No workflows yet — click + New Workflow to create one</div>`
                     : workflowRows.join("")}
             </div>
-        </div>
-        <div class="card">
-            <div class="card-title">📋 Workflow Templates</div>
-            <div style="font-size:0.75rem;color:var(--text3);margin-bottom:12px">Example automation flows — click + New Workflow to build your own</div>
-            <div class="wf-examples-wrap">${templateCards}</div>
         </div>`;
 }
 
 function initFactoryPanel(data, container) {
     if (typeof Sortable !== "undefined") {
         const list = container.querySelector("#workflows-list");
-        if (list) Sortable.create(list, { animation: 150, ghostClass: "sortable-ghost", handle: ".step-number" });
+        if (list) Sortable.create(list, { animation: 150, ghostClass: "sortable-ghost", handle: ".wf-summary-header" });
     }
 
     container.querySelector("#new-workflow-btn")?.addEventListener("click", () => showWorkflowModal());
 
-    // Toggle flow diagrams
-    container.querySelectorAll(".wf-flow-toggle").forEach(btn => {
+    // Collapse/expand flow diagram
+    container.querySelectorAll(".wf-collapse-btn").forEach(btn => {
         btn.addEventListener("click", e => {
             e.stopPropagation();
             const wfId = btn.dataset.wf;
             const detail = container.querySelector(`#wf-detail-${CSS.escape(wfId)}`);
             if (!detail) return;
             const isOpen = detail.style.display !== "none";
-            detail.style.display = isOpen ? "none" : "block";
-            btn.textContent = isOpen ? "📊" : "🔼";
+            detail.style.display = isOpen ? "none" : "";
+            btn.textContent = isOpen ? "▼" : "▲";
         });
     });
 
-    container.querySelectorAll(".wf-summary-row").forEach(row => {
-        row.addEventListener("click", e => {
-            if (e.target.closest("button")) return; // let buttons handle their own clicks
-            const wfId = row.dataset.wfToggle;
-            const toggleBtn = row.querySelector(".wf-flow-toggle");
-            if (toggleBtn) toggleBtn.click();
+    // Click on a step node to show detail popover
+    container.querySelectorAll(".wf-node-box").forEach(box => {
+        box.addEventListener("click", e => {
+            e.stopPropagation();
+            const node = box.closest(".wf-node");
+            const label  = node?.querySelector(".wf-node-label")?.textContent || "";
+            const detail = node?.querySelector(".wf-node-desc")?.textContent  || "";
+            // Remove any existing popover
+            document.querySelectorAll(".wf-step-popover").forEach(p => p.remove());
+            const pop = document.createElement("div");
+            pop.className = "wf-step-popover";
+            pop.innerHTML = `<div class="wf-step-popover-title">${escHtml(label)}</div><div class="wf-step-popover-body">${escHtml(detail)}</div>`;
+            document.body.appendChild(pop);
+            const rect = box.getBoundingClientRect();
+            pop.style.top  = (rect.bottom + window.scrollY + 6) + "px";
+            pop.style.left = Math.max(8, rect.left + window.scrollX - 20) + "px";
+            const dismiss = () => { pop.remove(); document.removeEventListener("click", dismiss); };
+            setTimeout(() => document.addEventListener("click", dismiss), 0);
         });
     });
 
