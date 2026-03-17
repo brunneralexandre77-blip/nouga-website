@@ -5667,8 +5667,8 @@ function showToast(msg, color = "green") { showNotif(msg, color); }
 // ──────────────────────────────────────────────────────────────────────────────
 // Messages Panel — cross-channel sync (Telegram, Dashboard, OpenClaw UI)
 // ──────────────────────────────────────────────────────────────────────────────
-const CHANNEL_LABELS = { telegram: "Telegram", dashboard: "Dashboard", openclaw: "OpenClaw", openclaw_reply: "OpenClaw" };
-const CHANNEL_ICONS  = { telegram: "✈️", dashboard: "🖥️", openclaw: "🦞", openclaw_reply: "🦞" };
+const CHANNEL_LABELS = { telegram: "Telegram", dashboard: "Dashboard", openclaw: "OpenClaw", openclaw_reply: "OpenClaw", webchat: "OpenClaw", "webchat-ui": "OpenClaw" };
+const CHANNEL_ICONS  = { telegram: "✈️", dashboard: "🖥️", openclaw: "🦞", openclaw_reply: "🦞", webchat: "🦞", "webchat-ui": "🦞" };
 
 function _syncMsgBubble(m) {
     const ch    = m.source_channel || "dashboard";
